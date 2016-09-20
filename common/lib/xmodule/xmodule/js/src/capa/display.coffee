@@ -651,7 +651,7 @@ class @Problem
       mode = element.data("mode")
       linenumbers = element.data("linenums")
       spaces = Array(parseInt(tabsize) + 1).join(" ")
-      CodeMirror.fromTextArea element[0], {
+      CodeMirrorEditor = CodeMirror.fromTextArea element[0], {
           lineNumbers: linenumbers
           indentUnit: tabsize
           tabSize: tabsize
@@ -669,6 +669,11 @@ class @Problem
               return false
           }
         }
+      id = element.attr("id").replace(/^input_/, "")
+      CodeMirrorTextArea = CodeMirrorEditor.getInputField()
+      CodeMirrorTextArea.setAttribute("id", "cm-textarea-#{id}")
+      CodeMirrorTextArea.setAttribute("aria-describedby", "cm-editor-exit-message-#{id} status_#{id}")
+      return CodeMirrorEditor
 
   inputtypeShowAnswerMethods:
     choicegroup: (element, display, answers) =>
