@@ -9,11 +9,12 @@ from django.test.client import RequestFactory
 from student.tests.factories import UserFactory
 
 
-def update_commerce_config(enabled=False, checkout_page='/test_basket/'):
+def update_commerce_config(enabled=False, checkout_page='/test_basket/', receipt_page='/checkout/receipt/'):
     """ Enable / Disable CommerceConfiguration model """
     CommerceConfiguration.objects.create(
         checkout_on_ecommerce_service=enabled,
-        single_course_checkout_page=checkout_page
+        receipt_page=receipt_page,
+        single_course_checkout_page=checkout_page,
     )
 
 
@@ -60,10 +61,23 @@ class EcommerceServiceTests(TestCase):
         self.assertTrue(is_enabled)
 
     @override_settings(ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url')
-    def test_payment_page_url(self):
+    def test_ecommerce_url_root(self):
+        """Verify that the proper root URL is returned."""
+        self.assertEqual(EcommerceService().ecommerce_url_root, 'http://ecommerce_url')
+
+    @override_settings(ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url')
+    def test_get_absolute_ecommerce_url(self):
         """Verify that the proper URL is returned."""
-        url = EcommerceService().payment_page_url()
+        url = EcommerceService().get_absolute_ecommerce_url('/test_basket/')
         self.assertEqual(url, 'http://ecommerce_url/test_basket/')
+
+    @override_settings(ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url')
+    def test_get_receipt_page_url(self):
+        """Verify that the proper Receipt page URL is returned."""
+        order_number = 'ORDER1'
+        url = EcommerceService().get_receipt_page_url(order_number)
+        expected_url = 'http://ecommerce_url/checkout/receipt/?order_number={}'.format(order_number)
+        self.assertEqual(url, expected_url)
 
     @override_settings(ECOMMERCE_PUBLIC_URL_ROOT='http://ecommerce_url')
     def test_checkout_page_url(self):

@@ -26,6 +26,7 @@ from external_auth.login_and_register import (
     register as external_auth_register
 )
 from lang_pref.api import released_languages, all_languages
+from lms.djangoapps.commerce.utils import EcommerceService
 from openedx.core.djangoapps.commerce.utils import ecommerce_api_client
 from openedx.core.djangoapps.programs.models import ProgramsApiConfig
 from openedx.core.djangoapps.theming.helpers import is_request_in_themed_site
@@ -309,10 +310,25 @@ def _external_auth_intercept(request, mode):
         return external_auth_register(request)
 
 
+def _get_receipt_page_url(order_number):
+    """
+    Given order number, get the receipt page URL for that Order.
+
+    Args:
+        order_number (str): Order number.
+
+    Returns:
+        Receipt page URL.
+    """
+    if configuration_helpers.get_value('ENABLE_ECOMMERCE_RECEIPT_PAGE'):
+        return EcommerceService().get_receipt_page_url(order_number)
+    return CommerceConfiguration.DEFAULT_RECEIPT_PAGE_URL + order_number
+
+
 def get_user_orders(user):
     """Given a user, get the detail of all the orders from the Ecommerce service.
 
-    Arguments:
+    Args:
         user (User): The user to authenticate as when requesting ecommerce.
 
     Returns:
@@ -347,7 +363,7 @@ def get_user_orders(user):
                                     'order_date': strftime_localized(
                                         date_placed.replace(tzinfo=pytz.UTC), 'SHORT_DATE'
                                     ),
-                                    'receipt_url': commerce_configuration.receipt_page + order['number']
+                                    'receipt_url': _get_receipt_page_url(order['number'])
                                 }
                                 user_orders.append(order_data)
                             except KeyError:
