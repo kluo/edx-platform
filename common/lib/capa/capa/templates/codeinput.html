@@ -1,3 +1,4 @@
+<%page expression_filter="h"/>
 <%!
 from django.utils.translation import ugettext as _
 from openedx.core.djangolib.markup import HTML
@@ -19,7 +20,7 @@ from openedx.core.djangolib.markup import HTML
             % if hidden:
       	    style="display:none;"
             % endif
-  >${value|h}</textarea>
+  >${value}</textarea>
   <span class="cm-editor-exit-message capa-message" id="cm-editor-exit-message-${id}">
     ${code_mirror_exit_message}
   </span>
