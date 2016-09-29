@@ -38,6 +38,8 @@ class VerificationService(object):
             'must_reverify' - verification has been denied and user must resubmit photos
         """
         user = User.objects.get(id=user_id)
+        # TODO: provide a photo verification abstraction so that this
+        # isn't hard-coded to use Software Secure.
         return SoftwareSecurePhotoVerification.user_status(user)
 
     def reverify_url(self):
