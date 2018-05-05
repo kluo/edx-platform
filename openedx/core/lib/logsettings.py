@@ -99,11 +99,6 @@ def get_logger_config(log_dir,
                 'level': 'DEBUG',
                 'propagate': False
             },
-            'django.request': {
-                'handlers': ['mail_admins'],
-                'level': 'ERROR',
-                'propagate': True,
-            },
         }
     }
     if syslog_addr:

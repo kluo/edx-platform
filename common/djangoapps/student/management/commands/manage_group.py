@@ -26,9 +26,9 @@ class Command(BaseCommand):
 
         try:
             Group.objects.get(name=group_name).delete()  # pylint: disable=no-member
-            self.stderr.write(_('Removed group: "{}"').format(group_name))
+            print(_('Removed group: "{}"').format(group_name))
         except Group.DoesNotExist:
-            self.stderr.write(_('Did not find a group with name "{}" - skipping.').format(group_name))
+            print(_('Did not find a group with name "{}" - skipping.').format(group_name))
 
     @transaction.atomic
     def handle(self, group_name, is_remove, permissions=None, *args, **options):
@@ -56,9 +56,9 @@ class Command(BaseCommand):
                         messages=exc.messages[0]
                     )
                 )
-            self.stderr.write(_('Created new group: "{}"').format(group_name))
+            print(_('Created new group: "{}"').format(group_name))
         else:
-            self.stderr.write(_('Found existing group: "{}"').format(group_name))
+            print(_('Found existing group: "{}"').format(group_name))
             old_permissions = set(group.permissions.all())
 
         new_permissions = self._resolve_permissions(permissions or set())
@@ -66,7 +66,7 @@ class Command(BaseCommand):
         add_permissions = new_permissions - old_permissions
         remove_permissions = old_permissions - new_permissions
 
-        self.stderr.write(
+        print(
             _(
                 'Adding {codenames} permissions to group "{group}"'
             ).format(
@@ -74,7 +74,7 @@ class Command(BaseCommand):
                 group=group.name
             )
         )
-        self.stderr.write(
+        print(
             _(
                 'Removing {codenames} permissions from group "{group}"'
             ).format(

@@ -30,7 +30,7 @@ class Command(BaseCommand):
         try:
             attempt = SoftwareSecurePhotoVerification.objects.get(receipt_id=receipt_id)
         except SoftwareSecurePhotoVerification.DoesNotExist:
-            self.stderr.write(
+            print(
                 'SoftwareSecurePhotoVerification with id {id} could not be found.\n'.format(id=receipt_id)
             )
             sys.exit(1)

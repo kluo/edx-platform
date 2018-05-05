@@ -35,7 +35,7 @@ class Command(BaseCommand):
         """
         old_value = getattr(user, attribute)
         if new_value != old_value:
-            self.stderr.write(
+            print(
                 _('Setting {attribute} for user "{username}" to "{new_value}"').format(
                     attribute=attribute, username=user.username, new_value=new_value
                 )
@@ -64,10 +64,10 @@ class Command(BaseCommand):
         try:
             user = get_user_model().objects.get(username=username)
         except get_user_model().DoesNotExist:
-            self.stderr.write(_('Did not find a user with username "{}" - skipping.').format(username))
+            print(_('Did not find a user with username "{}" - skipping.').format(username))
             return
         self._check_email_match(user, email)
-        self.stderr.write(_('Removing user: "{}"').format(user))
+        print(_('Removing user: "{}"').format(user))
         user.delete()
 
     @transaction.atomic
@@ -93,10 +93,10 @@ class Command(BaseCommand):
                 # allowing self-service password resetting.  Cases where unusable
                 # passwords are required, should be explicit, and will be handled below.
                 user.set_password(BaseUserManager().make_random_password(25))
-            self.stderr.write(_('Created new user: "{}"').format(user))
+            print(_('Created new user: "{}"').format(user))
         else:
             # NOTE, we will not update the email address of an existing user.
-            self.stderr.write(_('Found existing user: "{}"').format(user))
+            print(_('Found existing user: "{}"').format(user))
             self._check_email_match(user, email)
             old_groups = set(user.groups.all())
 
@@ -105,7 +105,7 @@ class Command(BaseCommand):
 
         # Set unusable password if specified
         if unusable_password and user.has_usable_password():
-            self.stderr.write(_('Setting unusable password for user "{}"').format(user))
+            print(_('Setting unusable password for user "{}"').format(user))
             user.set_unusable_password()
 
         # Ensure the user has a profile
@@ -113,7 +113,7 @@ class Command(BaseCommand):
             __ = user.profile
         except UserProfile.DoesNotExist:
             UserProfile.objects.create(user=user)
-            self.stderr.write(_('Created new profile for user: "{}"').format(user))
+            print(_('Created new profile for user: "{}"').format(user))
 
         # resolve the specified groups
         for group_name in groups or set():
@@ -123,12 +123,12 @@ class Command(BaseCommand):
                 new_groups.add(group)
             except Group.DoesNotExist:
                 # warn, but move on.
-                self.stderr.write(_('Could not find a group named "{}" - skipping.').format(group_name))
+                print(_('Could not find a group named "{}" - skipping.').format(group_name))
 
         add_groups = new_groups - old_groups
         remove_groups = old_groups - new_groups
 
-        self.stderr.write(
+        print(
             _(
                 'Adding user "{username}" to groups {group_names}'
             ).format(
@@ -136,7 +136,7 @@ class Command(BaseCommand):
                 group_names=[g.name for g in add_groups]
             )
         )
-        self.stderr.write(
+        print(
             _(
                 'Removing user "{username}" from groups {group_names}'
             ).format(
