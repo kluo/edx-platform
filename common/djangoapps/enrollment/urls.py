@@ -39,3 +39,6 @@ urlpatterns = patterns(
         name='courseenrollmentdetails'
     ),
 )
+urlpatterns += (
+    url(r'', include('openedx.stanford.common.djangoapps.enrollment.urls')),
+)
