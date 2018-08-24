@@ -7,5 +7,9 @@ from .views import UpdateEnrollmentView
 
 urlpatterns = patterns(
     'enrollment.views',
-    url(r'^update_status$', UpdateEnrollmentView.as_view(), name='updateenrollment'),
+    url(
+        r'^update_status$',
+        UpdateEnrollmentView.as_view(),
+        name='updateenrollment',
+    ),
 )

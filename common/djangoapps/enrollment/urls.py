@@ -3,7 +3,7 @@ URLs for the Enrollment API
 
 """
 from django.conf import settings
-from django.conf.urls import patterns, url
+from django.conf.urls import patterns, include, url
 
 from .views import (
     EnrollmentView,
