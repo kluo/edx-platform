@@ -50,7 +50,6 @@ class EnrollmentStatusView(APIView):
             }
         """
         try:
-            course_key = request.data['course_key']
             course_id = CourseKey.from_string(course_key)
         except InvalidKeyError:
             return Response(
