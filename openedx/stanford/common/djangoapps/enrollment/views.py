@@ -50,7 +50,7 @@ class EnrollmentStatusView(APIView):
             }
         """
         try:
-            course_key = CourseKey.from_string(course_key)
+            course_key = CourseKey.from_string(course_id)
         except InvalidKeyError:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
