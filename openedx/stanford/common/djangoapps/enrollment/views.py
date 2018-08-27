@@ -55,24 +55,29 @@ class UpdateEnrollmentView(APIView):
         except InvalidKeyError:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
-                data={"message": u"Invalid or missing course_id"},
+                data={
+                    'message': u'Invalid or missing course_id',
+                },
             )
-
         if not user_has_role(request.user, CourseStaffRole(course_id)):
             return Response(
                 status=status.HTTP_403_FORBIDDEN,
-                data={"message": u"User does not have permission to update enrollment for [{course_id}].".format(course_id=course_id)},
+                data={
+                    'message': u'User does not have permission to update enrollment for [{course_id}].'.format(
+                        course_id=course_id,
+                    ),
+                },
             )
-
         email = request.data['email']
         try:
             validate_email(email)
         except ValidationError:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
-                data={"message": u"Invalid email address"},
+                data={
+                    'message': u'Invalid email address',
+                },
             )
-
         action = request.data['action']
         email_students = request.POST.get('email_students', False) in ['true', 'True', True]
         auto_enroll = request.POST.get('auto_enroll', False) in ['true', 'True', True]
@@ -81,11 +86,9 @@ class UpdateEnrollmentView(APIView):
         if email_students:
             course = get_course_by_id(course_id)
             email_params = get_email_params(course, auto_enroll)
-
             if User.objects.filter(email=email).exists():
                 user = User.objects.get(email=email)
                 language = get_user_email_language(user)
-
         if action == 'enroll':
             enroll_email(
                 course_id, email, auto_enroll, email_students, email_params, language=language
@@ -99,5 +102,7 @@ class UpdateEnrollmentView(APIView):
         else:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
-                data={"message": u"Unrecognized action"}
+                data={
+                    'message': u'Unrecognized action',
+                },
             )
