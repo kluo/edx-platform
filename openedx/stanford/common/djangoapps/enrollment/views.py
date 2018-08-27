@@ -33,23 +33,25 @@ class EnrollmentStatusView(APIView):
     authentication_classes = OAuth2Authentication,
     permission_classes = (ApiKeyHeaderPermission,)
 
-    @method_decorator(require_post_params(['email', 'action']))
+    @method_decorator(require_post_params(['email', 'course_id', 'action']))
     @method_decorator(ensure_csrf_cookie_cross_domain)
-    def post(self, request, course_id=None):
+    def post(self, request):
         """
         Endpoint to update a user enrollment in a course. Requires staff access.
 
         **Example Request**
 
-            POST /api/enrollment/v1/status/course-v1:foo+bar+foobar
+            POST /api/enrollment/v1/status
             {
                 'email': 'foo@bar.com',
                 'action': 'enroll',
+                'course_id': 'course-v1:foo+bar+foobar',
                 'email_students': false,
                 'auto_enroll': true
             }
         """
         try:
+            course_id = request.data['course_id']
             course_key = CourseKey.from_string(course_id)
         except InvalidKeyError:
             return Response(
