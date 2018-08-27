@@ -9,10 +9,10 @@ from .views import EnrollmentStatusView
 urlpatterns = patterns(
     'enrollment.views',
     url(
-        r"^enrollment/status/{course_key}/?$".format(
-            course_key=settings.COURSE_ID_PATTERN,
+        r"^status/{course_id}/?$".format(
+            course_id=settings.COURSE_ID_PATTERN,
         ),
         EnrollmentStatusView.as_view(),
-        name='updateenrollment',
+        name='enrollment_status',
     ),
 )

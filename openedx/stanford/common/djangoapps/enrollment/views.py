@@ -33,9 +33,9 @@ class EnrollmentStatusView(APIView):
     authentication_classes = OAuth2Authentication,
     permission_classes = (ApiKeyHeaderPermission,)
 
-    @method_decorator(require_post_params(['email', 'course_id', 'action']))
+    @method_decorator(require_post_params(['email', 'action']))
     @method_decorator(ensure_csrf_cookie_cross_domain)
-    def post(self, request, course_key):
+    def post(self, request, course_id=None):
         """
         Endpoint to update a user enrollment in a course. Requires staff access.
 
@@ -50,7 +50,7 @@ class EnrollmentStatusView(APIView):
             }
         """
         try:
-            course_id = CourseKey.from_string(course_key)
+            course_key = CourseKey.from_string(course_key)
         except InvalidKeyError:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
@@ -58,7 +58,7 @@ class EnrollmentStatusView(APIView):
                     'message': u'Invalid or missing course_id',
                 },
             )
-        if not user_has_role(request.user, CourseStaffRole(course_id)):
+        if not user_has_role(request.user, CourseStaffRole(course_key)):
             return Response(
                 status=status.HTTP_403_FORBIDDEN,
                 data={
@@ -83,19 +83,19 @@ class EnrollmentStatusView(APIView):
         email_params = {}
         language = None
         if email_students:
-            course = get_course_by_id(course_id)
+            course = get_course_by_id(course_key)
             email_params = get_email_params(course, auto_enroll)
             if User.objects.filter(email=email).exists():
                 user = User.objects.get(email=email)
                 language = get_user_email_language(user)
         if action == 'enroll':
             enroll_email(
-                course_id, email, auto_enroll, email_students, email_params, language=language
+                course_key, email, auto_enroll, email_students, email_params, language=language
             )
             return Response(status=status.HTTP_204_NO_CONTENT)
         elif action == 'unenroll':
             unenroll_email(
-                course_id, email, email_students, email_params, language=language
+                course_key, email, email_students, email_params, language=language
             )
             return Response(status=status.HTTP_204_NO_CONTENT)
         else:
