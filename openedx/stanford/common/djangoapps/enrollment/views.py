@@ -75,8 +75,7 @@ class UpdateEnrollmentView(APIView):
 
         action = request.data['action']
         email_students = request.POST.get('email_students', False) in ['true', 'True', True]
-        auto_enroll = request.POST.get('email_students', False) in ['true', 'True', True]
-
+        auto_enroll = request.POST.get('auto_enroll', False) in ['true', 'True', True]
         email_params = {}
         language = None
         if email_students:
