@@ -41,11 +41,10 @@ class EnrollmentStatusView(APIView):
 
         **Example Request**
 
-            POST /api/enrollment/v1/status
+            POST /api/enrollment/v1/status/course-v1:foo+bar+foobar
             {
                 'email': 'foo@bar.com',
                 'action': 'enroll',
-                'course_id': 'course-v1:foo+bar+foobar',
                 'email_students': false,
                 'auto_enroll': true
             }
