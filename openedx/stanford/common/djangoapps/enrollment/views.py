@@ -26,7 +26,7 @@ from student.auth import user_has_role
 from student.roles import CourseStaffRole
 
 
-class UpdateEnrollmentView(APIView):
+class EnrollmentStatusView(APIView):
     """
     Update user enrollment for a particular course.
     """
@@ -35,23 +35,23 @@ class UpdateEnrollmentView(APIView):
 
     @method_decorator(require_post_params(['email', 'course_id', 'action']))
     @method_decorator(ensure_csrf_cookie_cross_domain)
-    def post(self, request):
+    def post(self, request, course_key):
         """
         Endpoint to update a user enrollment in a course. Requires staff access.
 
         **Example Request**
 
-            POST /api/enrollment/v1/update_status
+            POST /api/enrollment/v1/status/course-v1:foo+bar+foobar
             {
                 'email': 'foo@bar.com',
-                'course_id': 'course-v1:foo+bar+foobar',
                 'action': 'enroll',
                 'email_students': false,
                 'auto_enroll': true
             }
         """
         try:
-            course_id = CourseKey.from_string(request.data['course_id'])
+            course_key = request.data['course_key']
+            course_id = CourseKey.from_string(course_key)
         except InvalidKeyError:
             return Response(
                 status=status.HTTP_400_BAD_REQUEST,
