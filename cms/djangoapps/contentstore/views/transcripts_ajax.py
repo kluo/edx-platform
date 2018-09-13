@@ -196,33 +196,7 @@ def check_transcripts(request):
         `video` is html5 or youtube video_id
         `mode` is youtube, ,p4 or webm
 
-    Returns transcripts_presence: dictionary containing the status of the video
-
-    """
-    response = {
-        'html5_local': [],
-        'html5_equal': False,
-        'is_youtube_mode': False,
-        'youtube_local': False,
-        'youtube_server': False,
-        'youtube_diff': True,
-        'current_item_subs': None,
-        'status': 'Success',
-    }
-    try:
-        __, videos, item = _validate_transcripts_data(request)
-    except TranscriptsRequestValidationException as e:
-        return error_response(response, e.message)
-
-    transcripts_presence = get_transcripts_presence(videos, item)
-    return JsonResponse(transcripts_presence)
-
-
-def get_transcripts_presence(videos, item):
-    """ fills in the transcripts_presence dictionary after for a given component
-    with its list of videos.
-
-    Returns transcripts_presence dict:
+    Returns transcripts_presence dict::
 
         html5_local: list of html5 ids, if subtitles exist locally for them;
         is_youtube_mode: bool, if we have youtube_id, and as youtube mode is of higher priority, reflect this with flag;
@@ -242,8 +216,14 @@ def get_transcripts_presence(videos, item):
         'youtube_server': False,
         'youtube_diff': True,
         'current_item_subs': None,
-        'status': 'Success',
+        'status': 'Error',
     }
+    try:
+        __, videos, item = _validate_transcripts_data(request)
+    except TranscriptsRequestValidationException as e:
+        return error_response(transcripts_presence, e.message)
+
+    transcripts_presence['status'] = 'Success'
 
     filename = 'subs_{0}.srt.sjson'.format(item.sub)
     content_location = StaticContent.compute_location(item.location.course_key, filename)
@@ -308,7 +288,7 @@ def get_transcripts_presence(videos, item):
         'command': command,
         'subs': subs_to_use,
     })
-    return transcripts_presence
+    return JsonResponse(transcripts_presence)
 
 
 def _transcripts_logic(transcripts_presence, videos):
