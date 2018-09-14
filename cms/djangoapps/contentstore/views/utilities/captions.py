@@ -26,7 +26,7 @@ from xmodule.video_module.transcripts_utils import (
 )
 from xmodule.video_module import manage_video_subtitles_save
 
-from ..transcripts_ajax import get_transcripts_presence
+from ..transcripts_ajax import check_transcripts
 from ..course import get_course_and_check_access
 
 
@@ -101,7 +101,7 @@ def json_update_videos(request, locations):
                 name = os.path.splitext(url.split('/')[-1])[0]
                 html5[name] = 'html5'
             videos['html5'] = html5
-            captions_dict = get_transcripts_presence(videos, item)
+            captions_dict = check_transcripts(videos, item)
             captions_dict.update({'location': key_string})
             results.append(captions_dict)
 
@@ -219,7 +219,7 @@ def json_get_video_status(video_meta, item):
         name = os.path.splitext(url.split('/')[-1])[0]
         html5[name] = 'html5'
     videos['html5'] = html5
-    transcripts_presence = get_transcripts_presence(videos, item)
+    transcripts_presence = check_transcripts(videos, item)
     video_meta.update(transcripts_presence)
     return JsonResponse(video_meta)
 
