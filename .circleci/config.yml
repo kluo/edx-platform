@@ -15,14 +15,14 @@ jobs:
     - checkout
     # https://circleci.com/docs/2.0/artifacts/
     - run: mkdir -p $CIRCLE_ARTIFACTS $CIRCLE_TEST_REPORTS
-    - restore_cache:
-        keys:
+    #- restore_cache:
+    #    keys:
         # This branch if available
-        - v1-dep-{{ .Branch }}-
+    #    - v1-dep-{{ .Branch }}-
         # Default branch if not
-        - v1-dep-master-
+    #    - v1-dep-master-
         # Any branch if there are none on the default branch
-        - v1-dep-
+    #    - v1-dep-
     # Dependencies
     - run: sudo apt-get update
     - run: sudo apt-get upgrade
