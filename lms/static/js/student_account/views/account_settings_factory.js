@@ -10,17 +10,22 @@
     ], function(gettext, $, _, Backbone, Logger, UserAccountModel, UserPreferencesModel,
                  AccountSettingsFieldViews, AccountSettingsView, StringUtils) {
         return function(
+            isShibAuth,
             fieldsData,
             ordersHistoryData,
             authData,
+            passwordResetSupportUrl,
             userAccountsApiUrl,
             userPreferencesApiUrl,
             accountUserId,
-            platformName
+            platformName,
+            contactEmail,
+            allowEmailChange
         ) {
             var accountSettingsElement, userAccountModel, userPreferencesModel, aboutSectionsData,
                 accountsSectionData, ordersSectionData, accountSettingsView, showAccountSettingsPage,
-                showLoadingError, orderNumber, getUserField, userFields, timeZoneDropdownField, countryDropdownField;
+                showLoadingError, orderNumber, getUserField, userFields, timeZoneDropdownField, countryDropdownField,
+                emailFieldView;
 
             accountSettingsElement = $('.wrapper-account-settings');
 
@@ -29,6 +34,33 @@
 
             userPreferencesModel = new UserPreferencesModel();
             userPreferencesModel.url = userPreferencesApiUrl;
+
+            if (allowEmailChange) {
+                emailFieldView = {
+                    view: new AccountSettingsFieldViews.EmailFieldView({
+                        model: userAccountModel,
+                        title: gettext('Email Address'),
+                        valueAttribute: 'email',
+                        helpMessage: StringUtils.interpolate(
+                            gettext('The email address you use to sign in. Communications from {platform_name} and your courses are sent to this address.'),  // eslint-disable-line max-len
+                            {platform_name: platformName}
+                        ),
+                        persistChanges: true
+                    })
+                };
+            } else {
+                emailFieldView = {
+                    view: new AccountSettingsFieldViews.ReadonlyFieldView({
+                        model: userAccountModel,
+                        title: gettext('Email Address'),
+                        valueAttribute: 'email',
+                        helpMessage: StringUtils.interpolate(
+                            gettext('The email address you use to sign in. Communications from {platform_name} and your courses are sent to this address.  To change the email address, please contact {contact_email}.'),  // eslint-disable-line max-len
+                            {platform_name: platformName, contact_email: contactEmail}
+                        )
+                    })
+                };
+            }
 
             aboutSectionsData = [
                 {
@@ -52,23 +84,12 @@
                                 title: gettext('Full Name'),
                                 valueAttribute: 'name',
                                 helpMessage: gettext(
-                                    'The name that is used for ID verification and appears on your certificates. Other learners never see your full name. Make sure to enter your name exactly as it appears on your government-issued photo ID, including any non-Roman characters.'  // eslint-disable-line max-len
+                                    'The name that appears on your Statements of Accomplishment. Other learners never see your full name.'  // eslint-disable-line max-len
                                 ),
                                 persistChanges: true
                             })
                         },
-                        {
-                            view: new AccountSettingsFieldViews.EmailFieldView({
-                                model: userAccountModel,
-                                title: gettext('Email Address'),
-                                valueAttribute: 'email',
-                                helpMessage: StringUtils.interpolate(
-                                    gettext('The email address you use to sign in. Communications from {platform_name} and your courses are sent to this address.'),  // eslint-disable-line max-len
-                                    {platform_name: platformName}
-                                ),
-                                persistChanges: true
-                            })
-                        },
+                        emailFieldView,
                         {
                             view: new AccountSettingsFieldViews.PasswordFieldView({
                                 model: userAccountModel,
@@ -76,6 +97,7 @@
                                 screenReaderTitle: gettext('Reset Your Password'),
                                 valueAttribute: 'password',
                                 emailAttribute: 'email',
+                                passwordResetSupportUrl: passwordResetSupportUrl,
                                 linkTitle: gettext('Reset Your Password'),
                                 linkHref: fieldsData.password.url,
                                 helpMessage: StringUtils.interpolate(
@@ -115,14 +137,11 @@
                                 required: true,
                                 title: gettext('Time Zone'),
                                 valueAttribute: 'time_zone',
-                                helpMessage: gettext(
-                                    'Select the time zone for displaying course dates. If you do not specify a ' +
-                                    'time zone here, course dates, including assignment deadlines, are displayed in ' +
-                                    'Coordinated Universal Time (UTC).'
-                                ),
+                                helpMessage: gettext('Select the time zone for displaying course dates. If you do not specify a time zone, course dates, including assignment deadlines, will be displayed in your browser\'s local time zone.'), // eslint-disable-line max-len
                                 groupOptions: [{
                                     groupTitle: gettext('All Time Zones'),
-                                    selectOptions: fieldsData.time_zone.options
+                                    selectOptions: fieldsData.time_zone.options,
+                                    nullValueOptionLabel: gettext('Default (Local Time Zone)')
                                 }],
                                 persistChanges: true
                             })
@@ -189,12 +208,12 @@
                 {
                     title: gettext('Linked Accounts'),
                     subtitle: StringUtils.interpolate(
-                        gettext('You can link your social media accounts to simplify signing in to {platform_name}.'),
+                        gettext('Below is a list of accounts you have linked to your {platform_name} account.'),
                         {platform_name: platformName}
                     ),
                     fields: _.map(authData.providers, function(provider) {
                         return {
-                            'view': new AccountSettingsFieldViews.AuthFieldView({
+                            view: new AccountSettingsFieldViews.AuthFieldView({
                                 title: provider.name,
                                 valueAttribute: 'auth-' + provider.id,
                                 helpMessage: '',
@@ -211,10 +230,10 @@
 
             ordersHistoryData.unshift(
                 {
-                    'title': gettext('ORDER NAME'),
-                    'order_date': gettext('ORDER PLACED'),
-                    'price': gettext('TOTAL'),
-                    'number': gettext('ORDER NUMBER')
+                    title: gettext('ORDER NAME'),
+                    order_date: gettext('ORDER PLACED'),
+                    price: gettext('TOTAL'),
+                    number: gettext('ORDER NUMBER')
                 }
             );
 
@@ -231,13 +250,13 @@
                             orderNumber = 'orderId';
                         }
                         return {
-                            'view': new AccountSettingsFieldViews.OrderHistoryFieldView({
-                                title: order.title,
+                            view: new AccountSettingsFieldViews.OrderHistoryFieldView({
                                 totalPrice: order.price,
                                 orderId: order.number,
                                 orderDate: order.order_date,
                                 receiptUrl: order.receipt_url,
-                                valueAttribute: 'order-' + orderNumber
+                                valueAttribute: 'order-' + orderNumber,
+                                lines: order.lines
                             })
                         };
                     })

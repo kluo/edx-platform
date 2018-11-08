@@ -1,7 +1,7 @@
 """ API v0 views. """
 import logging
-import requests
 
+import requests
 from edx_rest_api_client import exceptions
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
@@ -13,18 +13,19 @@ from rest_framework.views import APIView
 from commerce.constants import Messages
 from commerce.exceptions import InvalidResponseError
 from commerce.http import DetailResponse, InternalRequestErrorResponse
-from commerce.utils import audit_log
 from course_modes.models import CourseMode
 from courseware import courses
-from embargo import api as embargo_api
 from enrollment.api import add_enrollment
 from enrollment.views import EnrollmentCrossDomainSessionAuth
 from openedx.core.djangoapps.commerce.utils import ecommerce_api_client
+from openedx.core.djangoapps.embargo import api as embargo_api
 from openedx.core.djangoapps.user_api.preferences.api import update_email_opt_in
 from openedx.core.lib.api.authentication import OAuth2AuthenticationAllowInactiveUser
-from student.models import CourseEnrollment
+from openedx.core.lib.log_utils import audit_log
+from student.models import CourseEnrollment, RegistrationCookieConfiguration
 from util.json_request import JsonResponse
 
+from openedx.stanford.common.djangoapps.student.views import notify_enrollment_by_email
 
 log = logging.getLogger(__name__)
 SAILTHRU_CAMPAIGN_COOKIE = 'sailthru_bid'
@@ -131,6 +132,7 @@ class BasketsView(APIView):
             )
             log.info(msg)
             self._enroll(course_key, user, default_enrollment_mode.slug)
+            notify_enrollment_by_email(courses.get_course(course_key), user, request)
             self._handle_marketing_opt_in(request, course_key, user)
             return DetailResponse(msg)
 
@@ -141,6 +143,7 @@ class BasketsView(APIView):
             api = ecommerce_api_client(user, session=api_session)
         except ValueError:
             self._enroll(course_key, user)
+            notify_enrollment_by_email(courses.get_course(course_key), user, request)
             msg = Messages.NO_ECOM_API.format(username=user.username, course_id=unicode(course_key))
             log.debug(msg)
             return DetailResponse(msg)
@@ -150,13 +153,11 @@ class BasketsView(APIView):
         # Make the API call
         try:
             # Pass along Sailthru campaign id
-            campaign_cookie = request.COOKIES.get(SAILTHRU_CAMPAIGN_COOKIE)
-            if campaign_cookie:
-                cookie = {SAILTHRU_CAMPAIGN_COOKIE: campaign_cookie}
-                if api_session.cookies:
-                    requests.utils.add_dict_to_cookiejar(api_session.cookies, cookie)
-                else:
-                    api_session.cookies = requests.utils.cookiejar_from_dict(cookie)
+            self._add_request_cookie_to_api_session(api_session, request, SAILTHRU_CAMPAIGN_COOKIE)
+
+            # Pass along UTM tracking info
+            utm_cookie_name = RegistrationCookieConfiguration.current().utm_cookie_name
+            self._add_request_cookie_to_api_session(api_session, request, utm_cookie_name)
 
             response_data = api.baskets.post({
                 'products': [{'sku': default_enrollment_mode.sku}],
@@ -193,6 +194,18 @@ class BasketsView(APIView):
 
         self._handle_marketing_opt_in(request, course_key, user)
         return response
+
+    def _add_request_cookie_to_api_session(self, server_session, request, cookie_name):
+        """ Add cookie from user request into server session """
+        user_cookie = None
+        if cookie_name:
+            user_cookie = request.COOKIES.get(cookie_name)
+            if user_cookie:
+                server_cookie = {cookie_name: user_cookie}
+                if server_session.cookies:
+                    requests.utils.add_dict_to_cookiejar(server_session.cookies, server_cookie)
+                else:
+                    server_session.cookies = requests.utils.cookiejar_from_dict(server_cookie)
 
 
 class BasketOrderView(APIView):

@@ -1,17 +1,23 @@
 """Django management command to force certificate regeneration for one user"""
 
-import logging
 import copy
+import logging
 from optparse import make_option
+
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
 
+from badges.utils import badges_enabled
 from badges.events.course_complete import get_completion_badge
-from xmodule.modulestore.django import modulestore
 from certificates.api import regenerate_user_certificates
+from xmodule.modulestore.django import modulestore
+
+if 'openedx.stanford.djangoapps.register_cme' in settings.INSTALLED_APPS:
+    from openedx.stanford.djangoapps.register_cme.models import ExtraInfo
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,6 +62,14 @@ class Command(BaseCommand):
                     dest='template_file',
                     default=None,
                     help='The template file used to render this certificate, like "QMSE01-distinction.pdf"'),
+        make_option(
+            '-d',
+            '--designation',
+            metavar='DESIGNATION',
+            dest='designation',
+            default=None,
+            help='Professional designation to pass to certificate generator',
+        ),
     )
 
     def handle(self, *args, **options):
@@ -101,6 +115,11 @@ class Command(BaseCommand):
 
         course = modulestore().get_course(course_id, depth=2)
 
+        designation = options['designation']
+
+        if 'openedx.stanford.djangoapps.register_cme' in settings.INSTALLED_APPS:
+            designation = options['designation'] or ExtraInfo.lookup_professional_designation(student)
+
         if not options['noop']:
             LOGGER.info(
                 (
@@ -111,7 +130,7 @@ class Command(BaseCommand):
                 course_id
             )
 
-            if course.issue_badges:
+            if badges_enabled() and course.issue_badges:
                 badge_class = get_completion_badge(course_id, student)
                 badge = badge_class.get_for_user(student)
 
@@ -122,6 +141,7 @@ class Command(BaseCommand):
             # Add the certificate request to the queue
             ret = regenerate_user_certificates(
                 student, course_id, course=course,
+                designation=designation,
                 forced_grade=options['grade_value'],
                 template_file=options['template_file'],
                 insecure=options['insecure']

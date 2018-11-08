@@ -2,44 +2,52 @@
 This module creates a sysadmin dashboard for managing and viewing
 courses.
 """
-import csv
+import unicodecsv as csv
 import json
 import logging
 import os
-import subprocess
 import StringIO
+import subprocess
 
+import mongoengine
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
-from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.db import IntegrityError
-from django.http import HttpResponse, Http404
+from django.http import Http404, HttpResponse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.html import escape
-from django.utils import timezone
 from django.utils.translation import ugettext as _
 from django.views.decorators.cache import cache_control
-from django.views.generic.base import TemplateView
-from django.views.decorators.http import condition
 from django.views.decorators.csrf import ensure_csrf_cookie
-from edxmako.shortcuts import render_to_response
-import mongoengine
-from path import Path as path
-
-from courseware.courses import get_course_by_id
-import dashboard.git_import as git_import
-from dashboard.git_import import GitImportError
-from student.roles import CourseStaffRole, CourseInstructorRole
-from dashboard.models import CourseImportLog
-from external_auth.models import ExternalAuthMap
-from external_auth.views import generate_password
-from student.models import CourseEnrollment, UserProfile, Registration
-import track.views
-from xmodule.modulestore.django import modulestore
+from django.views.decorators.http import condition
+from django.views.generic.base import TemplateView
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
+from path import Path as path
+import sys
+
+import dashboard.git_import as git_import
+import track.views
+from courseware.courses import get_course_by_id
+from dashboard.git_import import GitImportError
+from dashboard.models import CourseImportLog
+from edxmako.shortcuts import render_to_response
+from openedx.core.djangoapps.external_auth.models import ExternalAuthMap
+from openedx.core.djangoapps.external_auth.views import generate_password
+from student.models import CourseEnrollment, Registration, UserProfile
+from student.roles import CourseInstructorRole, CourseStaffRole
+from xmodule.modulestore.django import modulestore
+
+from lms.djangoapps.instructor_task.models import InstructorTask
+from django_comment_client.management_utils import rename_user as rename_user_util
+from django.core.management import call_command
+from django.db import transaction
+from pymongo.errors import PyMongoError
+from util.json_request import JsonResponse
 
 
 log = logging.getLogger(__name__)
@@ -250,6 +258,37 @@ class Users(SysadminDashboardView):
         user.delete()
         return _('Deleted user {username}').format(username=uname)
 
+    def rename_user(self, username_old, username_new):
+        """
+        helper method that processes a username rename request
+        :param username_old: the old username
+        :param username_new: the new username
+        :return: status message to display after the rename command is attempted
+        """
+        if not (username_old and username_new):
+            message = _('Usernames cannot be blank')
+        else:
+            try:
+                rename_user_util(username_old, username_new)
+            except User.DoesNotExist:
+                message = _("User '{username_old}' does not exist").format(
+                    username_old=username_old,
+                )
+            except IntegrityError:
+                message = _("User '{username_new}' already exists").format(
+                    username_new=username_new,
+                )
+            except PyMongoError:
+                message = _("Failed to modify username for user '{username_old}'").format(
+                    username_old=username_old,
+                )
+            else:
+                message = _("Changed username of user '{username_old}' to '{username_new}'").format(
+                    username_old=username_old,
+                    username_new=username_new,
+                )
+        return message
+
     def make_common_context(self):
         """Returns the datatable used for this view"""
 
@@ -318,6 +357,14 @@ class Users(SysadminDashboardView):
             uname = request.POST.get('student_uname', '').strip()
             self.msg = u'<h4>{0}</h4><p>{1}</p><hr />{2}'.format(
                 _('Delete User Results'), self.delete_user(uname), self.msg)
+        elif action == 'rename_user':
+            username_old = request.POST.get('username_old', '').strip()
+            username_new = request.POST.get('username_new', '').strip()
+            self.msg = u"<h4>{title}</h4><p>{message}</p><hr />{message_previous}".format(
+                title=_('Rename User Results'),
+                message=self.rename_user(username_old, username_new),
+                message_previous=self.msg,
+            )
 
         context = {
             'datatable': self.datatable,
@@ -559,7 +606,7 @@ class Staffing(SysadminDashboardView):
                 for role in roles:
                     for user in role(course.id).users_with_role():
                         datum = [course.id, role, user.username, user.email,
-                                 user.profile.name]
+                                 user.profile.name.encode('utf-8')]
                         data.append(datum)
             header = [_('course_id'),
                       _('role'), _('username'),
@@ -659,4 +706,238 @@ class GitLogs(TemplateView):
             'page_size': page_size
         }
 
+        return render_to_response(self.template_name, context)
+
+
+class MgmtCommands(SysadminDashboardView):
+    """
+    Render views for management commands
+    """
+
+    # This decorator is for the regenerate_user command, but affects all sysadmin
+    # management commands
+    @transaction.non_atomic_requests
+    def dispatch(self, *args, **kwargs):
+        return super(MgmtCommands, self).dispatch(*args, **kwargs)
+
+    def get(self, request):
+        """
+        Displays the view for the management commands tab
+        """
+
+        if not request.user.is_superuser:
+            raise Http404
+
+        context = {
+            'msg': self.msg,
+            'djangopid': os.getpid(),
+            'modeflag': {'mgmt_commands': 'active-section'},
+            'edx_platform_version': getattr(settings, 'EDX_PLATFORM_VERSION_STRING', ''),
+        }
+        return render_to_response(self.template_name, context)
+
+    def post(self, request):
+        """
+        Handles a post request containing data to run a management command
+        """
+
+        if not request.user.is_superuser:
+            raise Http404
+
+        command_name, kwargs, args = self.parse_parameters(request.POST.copy())
+        client_stdout, client_stderr, client_error = self.execute_command_and_capture_output(command_name, *args, **kwargs)
+
+        log.info(client_stdout)
+        log.error(client_stderr)
+
+        response = {
+            'stdout': client_stdout,
+            'stderr': client_stderr,
+        }
+        if client_error is not None:
+            response['error'] = client_error
+
+        return JsonResponse(response)
+
+    def execute_command_and_capture_output(self, command, *args, **kwargs):
+        """
+        Executes the specified command with the given args and kwargs, and returns the console output
+        :param command:
+        :param args:
+        :param kwargs:
+        :return: client_stdout, client_stderr, client_error
+        """
+        orig_stdout = sys.stdout
+        orig_stderr = sys.stderr
+
+        sys.stdout = stdout_buffer = StringIO.StringIO()
+        sys.stderr = stderr_buffer = StringIO.StringIO()
+
+        client_error = None
+        try:
+            call_command(command, *args, **kwargs)
+        except SystemExit:
+            client_error = _('Command failed')
+        except Exception as error:
+            client_error = unicode(error)
+
+        sys.stdout = orig_stdout
+        sys.stderr = orig_stderr
+        stdout_buffer.seek(0)
+        stderr_buffer.seek(0)
+
+        client_stdout = stdout_buffer.read()
+        client_stderr = stderr_buffer.read()
+        return client_stdout, client_stderr, client_error
+
+    def parse_parameters(self, parameters):
+        """
+        Parses the list of parameters from the ExecuteCommand post request
+        :param params:
+        :return: command_name, kwargs, args
+        """
+        command_name = parameters.pop('command')[0]
+
+        kwargs = {}
+        args = []
+        # collect kwargs and args
+        if 'args' in parameters:
+            args = parameters.pop('args')
+        if 'kwflags' in parameters:
+            kwflags = parameters.pop('kwflags')
+            for kwflag in kwflags:
+                kwargs[kwflag] = None
+        for kwarg in parameters:
+            kwargs[kwarg] = parameters[kwarg]
+        return command_name, kwargs, args
+
+
+class TaskQueue(SysadminDashboardView):
+    """
+    This provides the ability to kill an InstructorTask.
+
+    This is done by updating the row's task_state from "QUEUING" to "FAILURE".
+    """
+
+    def kill_task(self, row_id=None):
+        """
+        Kills an InstructorTask by changing it's task_state from 'QUEUING' to 'FAILURE'
+
+        Args:
+          Input: row_id (string)
+        """
+        if not row_id:
+            return _('Must provide an ID')
+
+        try:
+            int(row_id)
+        except ValueError:
+            return _('ID must be an integer')
+
+        msg = u''
+        try:
+            task = InstructorTask.objects.get(
+                id=row_id,
+                task_state__in=[
+                    'QUEUING',
+                    'PROGRESS',
+                ],
+            )
+        except InstructorTask.DoesNotExist, err:
+            msg = _('Cannot find task with ID {row_id} and task_state QUEUING - {error}').format(
+                row_id=row_id,
+                error=str(err)
+            )
+            return msg
+
+        task.task_state = 'FAILURE'
+        task.save()
+
+        msg += _('Task with id {row_id} was successfully killed!').format(row_id=row_id)
+        return msg
+
+    def make_datatable(self):
+        """Creates InstructorTask information datatable"""
+
+        data = []
+
+        tasks = InstructorTask.objects.filter(
+            task_state__in=[
+                'QUEUING',
+                'PROGRESS',
+            ],
+        ).order_by('id').reverse()
+        for task in tasks:
+            data.append(
+                [
+                    task.id,
+                    task.course_id,
+                    task.task_type,
+                    task.task_state,
+                ]
+            )
+
+        return dict(
+            header=[
+                _('ID'),
+                _('Course ID'),
+                _('Task Type'),
+                _('Task State'),
+            ],
+            title=_('List of Tasks'),
+            data=data,
+        )
+
+    def get(self, request):
+        """
+        Displays form allowing admin to kill an InstructorTask.
+
+        Args:
+          Input: request (Django Request object)
+        """
+        if not request.user.is_staff:
+            raise Http404
+
+        context = {
+            'datatable': self.make_datatable(),
+            'msg': self.msg,
+            'djangopid': os.getpid(),
+            'modeflag': {'task_queue': 'active-section'},
+            'edx_platform_version': getattr(settings, 'EDX_PLATFORM_VERSION_STRING', ''),
+        }
+        return render_to_response(self.template_name, context)
+
+    def post(self, request):
+        """
+        Handle actions on page Task Queue page.
+
+        Args:
+          Input: request (Django Request object)
+        """
+
+        if not request.user.is_staff:
+            raise Http404
+
+        action = request.POST.get('action', '')
+        track.views.server_track(request, action, {},
+                                 page='task_queue_sysdashboard')
+
+        if action == 'kill_task':
+            row_id = request.POST.get('row_id', '').strip()
+            self.msg = u'<h4>{0}</h4><p>{1}</p><hr />{2}'.format(
+                _('Kill Task Results'),
+                self.kill_task(row_id), self.msg)
+
+        else:
+            self.msg = u'<p>{0}</p><hr />'.format(
+                _('Unrecognized action'),
+            )
+
+        context = {
+            'datatable': self.datatable,
+            'msg': self.msg,
+            'djangopid': os.getpid(),
+            'modeflag': {'task_queue': 'active-section'},
+            'edx_platform_version': getattr(settings, 'EDX_PLATFORM_VERSION_STRING', ''),
+        }
         return render_to_response(self.template_name, context)

@@ -3,19 +3,18 @@ Tests for the LTI outcome service handlers, both in outcomes.py and in tasks.py
 """
 import unittest
 
+import requests
+import requests_oauthlib
 from django.test import TestCase
 from lxml import etree
-from mock import patch, MagicMock, ANY
-import requests_oauthlib
-import requests
+from mock import ANY, MagicMock, patch
+from opaque_keys.edx.locator import BlockUsageLocator, CourseLocator
 
-from opaque_keys.edx.locator import CourseLocator, BlockUsageLocator
-from student.tests.factories import UserFactory
-
-from lti_provider.models import GradedAssignment, LtiConsumer, OutcomeService
 import lti_provider.outcomes as outcomes
+from lti_provider.models import GradedAssignment, LtiConsumer, OutcomeService
+from student.tests.factories import UserFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
-from xmodule.modulestore.tests.factories import ItemFactory, CourseFactory, check_mongo_calls
+from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory, check_mongo_calls
 
 
 class StoreOutcomeParametersTest(TestCase):
@@ -345,6 +344,30 @@ class TestAssignmentsForProblem(ModuleStoreTestCase):
         )
         assignment.save()
         return assignment
+
+    def test_create_two_lti_consumers_with_empty_instance_guid(self):
+        """
+        Test ability to create two or more LTI consumers through the Django admin
+        with empty instance_guid field.
+        A blank guid field is required when a customer enables a new secret/key combination for
+        LTI integration with their LMS.
+        """
+        lti_consumer_first = LtiConsumer(
+            consumer_name='lti_consumer_name_second',
+            consumer_key='lti_consumer_key_second',
+            consumer_secret='lti_consumer_secret_second',
+            instance_guid=''
+        )
+        lti_consumer_first.save()
+        lti_consumer_second = LtiConsumer(
+            consumer_name='lti_consumer_name_third',
+            consumer_key='lti_consumer_key_third',
+            consumer_secret='lti_consumer_secret_third',
+            instance_guid=''
+        )
+        lti_consumer_second.save()
+        count = LtiConsumer.objects.count()
+        self.assertEqual(count, 3)
 
     def test_with_no_graded_assignments(self):
         with check_mongo_calls(3):

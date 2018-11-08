@@ -2,38 +2,34 @@
 Test the about xblock
 """
 import datetime
-import pytz
 
+import pytz
 from ccx_keys.locator import CCXLocator
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.test.utils import override_settings
+from milestones.tests.utils import MilestonesTestCaseMixin
 from mock import patch
 from nose.plugins.attrib import attr
 
 from course_modes.models import CourseMode
+from lms.djangoapps.ccx.tests.factories import CcxFactory
+from shoppingcart.models import Order, PaidCourseRegistration
+from student.models import CourseEnrollment
+from student.tests.factories import AdminFactory, CourseEnrollmentAllowedFactory, UserFactory
 from track.tests import EventTrackingTestCase
-from xmodule.modulestore.tests.django_utils import TEST_DATA_MIXED_MODULESTORE
+from util.milestones_helpers import get_prerequisite_courses_display, set_prerequisite_courses
+from xmodule.course_module import CATALOG_VISIBILITY_ABOUT, CATALOG_VISIBILITY_NONE
+from xmodule.modulestore.tests.django_utils import (
+    TEST_DATA_MIXED_MODULESTORE,
+    TEST_DATA_SPLIT_MODULESTORE,
+    ModuleStoreTestCase,
+    SharedModuleStoreTestCase
+)
+from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
 from xmodule.modulestore.tests.utils import TEST_DATA_DIR
 from xmodule.modulestore.xml_importer import import_course_from_xml
 
-from student.models import CourseEnrollment
-from student.tests.factories import AdminFactory, CourseEnrollmentAllowedFactory, UserFactory
-from shoppingcart.models import Order, PaidCourseRegistration
-from xmodule.course_module import CATALOG_VISIBILITY_ABOUT, CATALOG_VISIBILITY_NONE
-from xmodule.modulestore.tests.django_utils import (
-    ModuleStoreTestCase,
-    SharedModuleStoreTestCase,
-    TEST_DATA_SPLIT_MODULESTORE
-)
-from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
-from util.milestones_helpers import (
-    set_prerequisite_courses,
-    get_prerequisite_courses_display,
-)
-from milestones.tests.utils import MilestonesTestCaseMixin
-
-from lms.djangoapps.ccx.tests.factories import CcxFactory
 from .helpers import LoginEnrollmentTestCase
 
 # HTML for registration button
@@ -257,12 +253,6 @@ class AboutWithCappedEnrollmentsTestCase(LoginEnrollmentTestCase, SharedModuleSt
             data="OOGIE BLOOGIE", display_name="overview"
         )
 
-    def setUp(self):
-        """
-        Set up the tests
-        """
-        super(AboutWithCappedEnrollmentsTestCase, self).setUp()
-
     def test_enrollment_cap(self):
         """
         This test will make sure that enrollment caps are enforced
@@ -310,9 +300,6 @@ class AboutWithInvitationOnly(SharedModuleStoreTestCase):
             display_name="overview"
         )
 
-    def setUp(self):
-        super(AboutWithInvitationOnly, self).setUp()
-
     def test_invitation_only(self):
         """
         Test for user not logged in, invitation only course.
@@ -359,9 +346,6 @@ class AboutTestCaseShibCourse(LoginEnrollmentTestCase, SharedModuleStoreTestCase
             category="about", parent_location=cls.course.location,
             data="OOGIE BLOOGIE", display_name="overview"
         )
-
-    def setUp(self):
-        super(AboutTestCaseShibCourse, self).setUp()
 
     def test_logged_in_shib_course(self):
         """
@@ -430,6 +414,34 @@ class AboutWithClosedEnrollment(ModuleStoreTestCase):
         # course price is not visible ihe course_about page when the course
         # mode is not set to honor
         self.assertNotIn('<span class="important-dates-item-text">$10</span>', resp.content)
+
+
+# Stanford About Sidebar tests
+@attr(shard=1)
+class AboutSidebarHTMLTestCase(SharedModuleStoreTestCase):
+    """
+    This test case will check the About page for the content in the HTML sidebar.
+    """
+    def setUp(self):
+        super(AboutSidebarHTMLTestCase, self).setUp()
+        self.course = CourseFactory.create()
+
+    def test_html_sidebar_empty(self):
+        url = reverse('about_course', args=[self.course.id.to_deprecated_string()])
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("About Sidebar HTML Heading", resp.content)
+
+    def test_html_sidebar_has_content(self):
+        ItemFactory.create(
+            category="about", parent_location=self.course.location,
+            data="About Sidebar HTML Heading", display_name="about_sidebar_html"
+        )
+        url = reverse('about_course', args=[self.course.id.to_deprecated_string()])
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("About Sidebar HTML Heading", resp.content)
+# / Stanford About Sidebar tests
 
 
 @attr(shard=1)

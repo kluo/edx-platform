@@ -1,33 +1,30 @@
 """Interface for adding certificate generation tasks to the XQueue. """
 import json
-import random
 import logging
-import lxml.html
-from lxml.etree import XMLSyntaxError, ParserError
+import random
 from uuid import uuid4
 
-from django.test.client import RequestFactory
+import lxml.html
 from django.conf import settings
 from django.core.urlresolvers import reverse
+from django.test.client import RequestFactory
+from lxml.etree import ParserError, XMLSyntaxError
 from requests.auth import HTTPBasicAuth
 
-from lms.djangoapps.grades import course_grades
-from xmodule.modulestore.django import modulestore
-from capa.xqueue_interface import XQueueInterface
-from capa.xqueue_interface import make_xheader, make_hashkey
-from course_modes.models import CourseMode
-from student.models import UserProfile, CourseEnrollment
-from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
-
+from capa.xqueue_interface import XQueueInterface, make_hashkey, make_xheader
+from certificates.models import CertificateStatuses as status
 from certificates.models import (
     CertificateStatuses,
-    GeneratedCertificate,
-    certificate_status_for_student,
-    CertificateStatuses as status,
     CertificateWhitelist,
-    ExampleCertificate
+    ExampleCertificate,
+    GeneratedCertificate,
+    certificate_status_for_student
 )
-
+from course_modes.models import CourseMode
+from lms.djangoapps.grades.new.course_grade_factory import CourseGradeFactory
+from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification
+from student.models import CourseEnrollment, UserProfile
+from xmodule.modulestore.django import modulestore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -107,7 +104,16 @@ class XQueueCertInterface(object):
         self.restricted = UserProfile.objects.filter(allow_certificate=False)
         self.use_https = True
 
-    def regen_cert(self, student, course_id, course=None, forced_grade=None, template_file=None, generate_pdf=True):
+    def regen_cert(
+            self,
+            student,
+            course_id,
+            course=None,
+            designation=None,
+            forced_grade=None,
+            template_file=None,
+            generate_pdf=True,
+    ):
         """(Re-)Make certificate for a particular student in a particular course
 
         Arguments:
@@ -161,6 +167,7 @@ class XQueueCertInterface(object):
             student,
             course_id,
             course=course,
+            designation=designation,
             forced_grade=forced_grade,
             template_file=template_file,
             generate_pdf=generate_pdf
@@ -184,7 +191,7 @@ class XQueueCertInterface(object):
         raise NotImplementedError
 
     # pylint: disable=too-many-statements
-    def add_cert(self, student, course_id, course=None, forced_grade=None, template_file=None, generate_pdf=True):
+    def add_cert(self, student, course_id, course=None, forced_grade=None, template_file=None, designation=None, generate_pdf=True):
         """
         Request a new certificate for a student.
 
@@ -198,6 +205,8 @@ class XQueueCertInterface(object):
 
         Will change the certificate status to 'generating' or
         `downloadable` in case of web view certificates.
+
+        The course must not be a CCX.
 
         Certificate must be in the 'unavailable', 'error',
         'deleted' or 'generating' state.
@@ -213,6 +222,18 @@ class XQueueCertInterface(object):
 
         Returns the newly created certificate instance
         """
+
+        if hasattr(course_id, 'ccx'):
+            LOGGER.warning(
+                (
+                    u"Cannot create certificate generation task for user %s "
+                    u"in the course '%s'; "
+                    u"certificates are not allowed for CCX courses."
+                ),
+                student.id,
+                unicode(course_id)
+            )
+            return None
 
         valid_statuses = [
             status.generating,
@@ -257,7 +278,7 @@ class XQueueCertInterface(object):
         self.request.session = {}
 
         is_whitelisted = self.whitelist.filter(user=student, course_id=course_id, whitelist=True).exists()
-        grade = course_grades.summary(student, course)
+        course_grade = CourseGradeFactory().create(student, course)
         enrollment_mode, __ = CourseEnrollment.enrollment_mode_for_user(student, course_id)
         mode_is_verified = enrollment_mode in GeneratedCertificate.VERIFIED_CERTS_MODES
         user_is_verified = SoftwareSecurePhotoVerification.user_is_verified(student)
@@ -281,8 +302,6 @@ class XQueueCertInterface(object):
         else:
             # honor code and audit students
             template_pdf = "certificate-template-{id.org}-{id.course}.pdf".format(id=course_id)
-        if forced_grade:
-            grade['grade'] = forced_grade
 
         LOGGER.info(
             (
@@ -303,13 +322,13 @@ class XQueueCertInterface(object):
 
         cert.mode = cert_mode
         cert.user = student
-        cert.grade = grade['percent']
+        cert.grade = course_grade.percent
         cert.course_id = course_id
         cert.name = profile_name
         cert.download_url = ''
 
         # Strip HTML from grade range label
-        grade_contents = grade.get('grade', None)
+        grade_contents = forced_grade or course_grade.letter_grade
         try:
             grade_contents = lxml.html.fromstring(grade_contents).text_content()
             passing = True
@@ -406,9 +425,9 @@ class XQueueCertInterface(object):
             return cert
 
         # Finally, generate the certificate and send it off.
-        return self._generate_cert(cert, course, student, grade_contents, template_pdf, generate_pdf)
+        return self._generate_cert(cert, course, student, grade_contents, template_pdf, generate_pdf, designation)
 
-    def _generate_cert(self, cert, course, student, grade_contents, template_pdf, generate_pdf):
+    def _generate_cert(self, cert, course, student, grade_contents, template_pdf, generate_pdf, designation):
         """
         Generate a certificate for the student. If `generate_pdf` is True,
         sends a request to XQueue.
@@ -425,6 +444,7 @@ class XQueueCertInterface(object):
             'name': cert.name,
             'grade': grade_contents,
             'template_pdf': template_pdf,
+            'designation': designation,
         }
         if generate_pdf:
             cert.status = status.generating

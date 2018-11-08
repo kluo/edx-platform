@@ -3,13 +3,16 @@ Management command which sets or gets the certificate whitelist for a given
 user/course
 """
 from __future__ import print_function
-from django.core.management.base import BaseCommand, CommandError
+
 from optparse import make_option
+
+from django.contrib.auth.models import User
+from django.core.management.base import BaseCommand, CommandError
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
+
 from certificates.models import CertificateWhitelist
-from django.contrib.auth.models import User
 
 
 def get_user_from_identifier(identifier):
@@ -108,8 +111,11 @@ class Command(BaseCommand):
                     update_user_whitelist(username, add=add_to_whitelist)
 
         whitelist = CertificateWhitelist.objects.filter(course_id=course)
-        wl_users = '\n'.join(
-            "{u.user.username} {u.user.email} {u.whitelist}".format(u=u)
-            for u in whitelist
+        print(
+            u"User whitelist for course {0}:".format(course_id)
         )
-        print("User whitelist for course {0}:\n{1}".format(course_id, wl_users))
+        for whitelisted in whitelist:
+            username = whitelisted.user.username
+            email = whitelisted.user.email
+            is_whitelisted = whitelisted.whitelist
+            print(username, email, is_whitelisted)

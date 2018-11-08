@@ -272,11 +272,11 @@
   .wrapper-header {
 
     .wrapper-l {
-      width: flex-grid(8,12);
+      width: flex-grid(9,12);
     }
 
     .wrapper-r {
-      width: flex-grid(4,12);
+      width: flex-grid(3,12);
     }
 
     .branding {
@@ -385,6 +385,9 @@ body.course.advanced .nav-course-settings-advanced,
 body.course.view-certificates .nav-course-settings-certificates,
 
 // course tools
+body.course.utilities .nav-course-tools .title,
+body.course.utilities .nav-course-tools-utilities,
+
 body.course.view-import .nav-course-tools .title,
 body.course.view-export .nav-course-tools .title,
 body.course.view-export-git .nav-course-tools .title,

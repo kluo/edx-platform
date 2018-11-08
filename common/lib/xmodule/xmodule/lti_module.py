@@ -51,28 +51,29 @@ What is supported:
             GET / PUT / DELETE HTTP methods respectively
 """
 
-import datetime
-from django.utils.timezone import UTC
-import logging
-import oauthlib.oauth1
-from oauthlib.oauth1.rfc5849 import signature
-import hashlib
 import base64
-import urllib
+import datetime
+import hashlib
+import logging
 import textwrap
-import bleach
-from lxml import etree
-from webob import Response
-import mock
+import urllib
 from xml.sax.saxutils import escape
 
+import bleach
+import mock
+import oauthlib.oauth1
+from django.utils.timezone import UTC
+from lxml import etree
+from oauthlib.oauth1.rfc5849 import signature
+from pkg_resources import resource_string
+from webob import Response
+from xblock.core import List, Scope, String, XBlock
+from xblock.fields import Boolean, Float
+
 from xmodule.editing_module import MetadataOnlyEditingDescriptor
+from xmodule.lti_2_util import LTI20ModuleMixin, LTIError
 from xmodule.raw_module import EmptyDataRawDescriptor
 from xmodule.x_module import XModule, module_attr
-from xmodule.lti_2_util import LTI20ModuleMixin, LTIError
-from pkg_resources import resource_string
-from xblock.core import String, Scope, List, XBlock
-from xblock.fields import Boolean, Float
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class LTIFields(object):
     display_name = String(
         display_name=_("Display Name"),
         help=_(
-            "Enter the name that students see for this component.  "
+            "The display name for this component. "
             "Analytics reports may also use the display name to identify this component."
         ),
         scope=Scope.settings,
@@ -199,6 +200,21 @@ class LTIFields(object):
             "This setting hides the Launch button and any IFrames for this component."
         ),
         default=False,
+        scope=Scope.settings
+    )
+    title_postscript = String(
+        display_name="Post-script to component title",
+        default="(External Resource)",
+        scope=Scope.settings
+    )
+    grader_feedback_label = String(
+        display_name="String label for grader feedback",
+        default="Feedback on your work from the grader:",
+        scope=Scope.settings
+    )
+    instruction_text = String(
+        display_name="Additional instruction text for component",
+        default="",
         scope=Scope.settings
     )
 
@@ -413,7 +429,11 @@ class LTIModule(LTIFields, LTI20ModuleMixin, XModule):
         #     'acronym': ['title'],
         #
         # This lets all plaintext through.
-        sanitized_comment = bleach.clean(self.score_comment)
+        allowed_tags = bleach.ALLOWED_TAGS + [u'img']
+        allowed_attrs = bleach.ALLOWED_ATTRIBUTES.copy()
+        allowed_attrs[u'img'] = [u'src', u'height', u'width', u'alt', u'title']
+
+        sanitized_comment = bleach.clean(self.score_comment, tags=allowed_tags, attributes=allowed_attrs)
 
         return {
             'input_fields': self.get_input_fields(),
@@ -430,6 +450,9 @@ class LTIModule(LTIFields, LTI20ModuleMixin, XModule):
             'weight': self.weight,
             'module_score': self.module_score,
             'comment': sanitized_comment,
+            'title_postscript': self.title_postscript,
+            'grader_feedback_label': self.grader_feedback_label,
+            'instruction_text': self.instruction_text,
             'description': self.description,
             'ask_to_send_username': self.ask_to_send_username,
             'ask_to_send_email': self.ask_to_send_email,
@@ -648,9 +671,6 @@ oauth_consumer_key="", oauth_signature="frVp4JuvT1mVXlxktiAUjQ7%2F1cw%3D"'}
         # Add LTI parameters to OAuth parameters for sending in form.
         params.update(body)
         return params
-
-    def max_score(self):
-        return self.weight if self.has_score else None
 
     @XBlock.handler
     def grade_handler(self, request, suffix):  # pylint: disable=unused-argument
@@ -898,6 +918,10 @@ class LTIDescriptor(LTIFields, MetadataOnlyEditingDescriptor, EmptyDataRawDescri
     """
     Descriptor for LTI Xmodule.
     """
+
+    def max_score(self):
+        return self.weight if self.has_score else None
+
     module_class = LTIModule
     resources_dir = None
     grade_handler = module_attr('grade_handler')

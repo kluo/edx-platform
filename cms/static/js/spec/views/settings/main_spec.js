@@ -21,6 +21,7 @@ define([
                 end_date: '2014-11-05T20:00:00Z',
                 enrollment_start: '2014-10-00T00:00:00Z',
                 enrollment_end: '2014-11-05T00:00:00Z',
+                enable_enrollment_email: false,
                 org: '',
                 course_id: '',
                 run: '',

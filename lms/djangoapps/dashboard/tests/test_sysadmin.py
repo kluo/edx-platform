@@ -6,27 +6,30 @@ import os
 import re
 import shutil
 import unittest
+from datetime import datetime
 from uuid import uuid4
-from util.date_utils import get_time_display, DEFAULT_DATE_TIME_FORMAT
-from nose.plugins.attrib import attr
 
+import mongoengine
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.urlresolvers import reverse
 from django.test.client import Client
 from django.test.utils import override_settings
 from django.utils.timezone import utc as UTC
-import mongoengine
+from mock import patch
+from nose.plugins.attrib import attr
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
+from pymongo.errors import PyMongoError
 
-from dashboard.models import CourseImportLog
 from dashboard.git_import import GitImportErrorNoDir
-from datetime import datetime
+from dashboard.models import CourseImportLog
+from instructor_task.tests.factories import InstructorTaskFactory
 from student.roles import CourseStaffRole, GlobalStaff
 from student.tests.factories import UserFactory
+from util.date_utils import DEFAULT_DATE_TIME_FORMAT, get_time_display
 from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import SharedModuleStoreTestCase
-from xmodule.modulestore.tests.mongo_connection import MONGO_PORT_NUM, MONGO_HOST
-
+from xmodule.modulestore.tests.mongo_connection import MONGO_HOST, MONGO_PORT_NUM
 
 TEST_MONGODB_LOG = {
     'host': MONGO_HOST,
@@ -56,6 +59,12 @@ class SysadminBaseTestCase(SharedModuleStoreTestCase):
                                        email='test_user+sysadmin@edx.org',
                                        password='foo')
         self.client = Client()
+
+    def _setsuperuser_login(self):
+        """Makes the test user a superuser and logs them in"""
+        self.user.is_superuser = True
+        self.user.save()
+        self.client.login(username=self.user.username, password='foo')
 
     def _setstaff_login(self):
         """Makes the test user staff and logs them in"""
@@ -107,6 +116,184 @@ class SysadminBaseTestCase(SharedModuleStoreTestCase):
         """
         os.mkdir(path)
         self.addCleanup(shutil.rmtree, path)
+
+
+@attr('shard_1')
+@unittest.skipUnless(settings.FEATURES.get('ENABLE_SYSADMIN_DASHBOARD'),
+                     "ENABLE_SYSADMIN_DASHBOARD not set")
+class TestSysadmin(SysadminBaseTestCase):
+    """
+    Test sysadmin dashboard features using XMLModuleStore
+    """
+
+    def test_rename_user(self):
+        """
+        Tests the rename user feature
+        """
+        self._setstaff_login()
+        self.client.login(username=self.user.username, password='foo')
+
+        user1 = UserFactory.create(
+            username='test_rename_user',
+            email='test_rename_user@edx.org',
+            password='foo',
+        )
+        user2 = UserFactory.create(
+            username=user1.username + '_second',
+            email=user1.username + '_second@edx.org',
+            password='foo',
+        )
+
+        username_new = 'targetName'
+        username_nonexistent = 'notFoundName'
+
+        # ensures that the test database doesn't have a user with username `notFoundName`
+        self.assertEqual(0, len(User.objects.filter(
+            username=username_nonexistent,
+        )))
+
+        # tests response when one field is blank
+        response = self.client.post(reverse('sysadmin'), {
+            'action': 'rename_user',
+            'username_old': '',
+            'username_new': username_new,
+        })
+        self.assertIn("Usernames cannot be blank", response.content.decode('utf-8'))
+
+        # tests response when user is not found
+        response = self.client.post(reverse('sysadmin'), {
+            'action': 'rename_user',
+            'username_old': username_nonexistent,
+            'username_new': username_new,
+        })
+        self.assertIn("User '{user}' does not exist".format(
+            user=username_nonexistent,
+        ), response.content.decode('utf-8'))
+
+        # tests response when rename fails due to integrity error
+        response = self.client.post(reverse('sysadmin'), {
+            'action': 'rename_user',
+            'username_old': user1.username,
+            'username_new': user2.username,
+        })
+        self.assertIn("User '{user}' already exists".format(
+            user=user2.username,
+        ), response.content.decode('utf-8'))
+
+        # tests response when rename is successful
+        response = self.client.post(reverse('sysadmin'), {
+            'action': 'rename_user',
+            'username_old': user1.username,
+            'username_new': username_new,
+        })
+        self.assertIn("Changed username of user '{user}'".format(
+            user=user1.username,
+        ), response.content.decode('utf-8'))
+
+        # tests response when PyMongoError is raised
+        with patch('dashboard.sysadmin.rename_user_util') as mock_rename_user_util:
+            mock_rename_user_util.side_effect = PyMongoError()
+            response = self.client.post(reverse('sysadmin'), {
+                'action': 'rename_user',
+                'username_old': user1.username,
+                'username_new': user2.username,
+            })
+        self.assertIn("Failed to modify username for user '{user}'".format(
+            user=user1.username,
+        ), response.content.decode('utf-8'))
+
+        # cleanup users
+        user1.delete()
+        user2.delete()
+
+    def test_task_queue(self):
+        """Kill an InstructorTask"""
+
+        self._setstaff_login()
+        self.client.login(username=self.user.username, password='foo')
+
+        # Missing ID.
+        response = self.client.post(
+            reverse(
+                'sysadmin_task_queue'
+            ),
+            {
+                'action': 'kill_task',
+            }
+        )
+        self.assertIn('Must provide an ID', response.content.decode('utf-8'))
+
+        # ID not an integer.
+        response = self.client.post(
+            reverse(
+                'sysadmin_task_queue'
+            ),
+            {
+                'action': 'kill_task',
+                'row_id': 'abc',
+            }
+        )
+        self.assertIn('ID must be an integer', response.content.decode('utf-8'))
+
+        # InstructorTask with this ID doesn't exist.
+        response = self.client.post(
+            reverse(
+                'sysadmin_task_queue'
+            ),
+            {
+                'action': 'kill_task',
+                'row_id': '123',
+            }
+        )
+        self.assertIn('Cannot find task with ID 123 and task_state QUEUING - InstructorTask matching query does not exist.', response.content.decode('utf-8'))
+
+        # Create InstructorTask with incorrect task_state.
+        instructor_task = InstructorTaskFactory.create(
+            task_key='dummy value',
+            task_id=str(uuid4()),
+            task_state='SUCCESS',
+        )
+        response = self.client.post(
+            reverse(
+                'sysadmin_task_queue'
+            ),
+            {
+                'action': 'kill_task',
+                'row_id': instructor_task.id,
+            }
+        )
+        self.assertIn(
+            'Cannot find task with ID {instructor_task_id} and task_state QUEUING - InstructorTask matching query does not exist.'.format(
+                instructor_task_id=instructor_task.id,
+            ),
+            response.content.decode(
+                'utf-8',
+            )
+        )
+
+        # Create InstructorTask with correct task_state
+        instructor_task = InstructorTaskFactory.create(
+            task_key='dummy value',
+            task_id=str(uuid4()),
+            task_state='QUEUING',
+        )
+        response = self.client.post(
+            reverse(
+                'sysadmin_task_queue'
+            ),
+            {
+                'action': 'kill_task',
+                'row_id': instructor_task.id,
+            }
+        )
+        self.assertIn(
+            'Task with id {instructor_task_id} was successfully killed!'.format(
+                instructor_task_id=instructor_task.id,
+            ),
+            response.content.decode(
+                'utf-8',
+            )
+        )
 
 
 @attr(shard=1)

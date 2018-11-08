@@ -4,26 +4,30 @@ Views used by XQueue certificate generation.
 import json
 import logging
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.http import HttpResponse, Http404, HttpResponseForbidden
+from django.http import Http404, HttpResponse, HttpResponseForbidden
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
-import dogstats_wrapper as dog_stats_api
-
-from capa.xqueue_interface import XQUEUE_METRIC_NAME
-from xmodule.modulestore.django import modulestore
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
-from util.json_request import JsonResponse, JsonResponseBadRequest
-from util.bad_request_rate_limiter import BadRequestRateLimiter
+
+import dogstats_wrapper as dog_stats_api
+from capa.xqueue_interface import XQUEUE_METRIC_NAME
 from certificates.api import generate_user_certificates
 from certificates.models import (
-    certificate_status_for_student,
     CertificateStatuses,
-    GeneratedCertificate,
     ExampleCertificate,
+    GeneratedCertificate,
+    certificate_status_for_student
 )
 
+if 'openedx.stanford.djangoapps.register_cme' in settings.INSTALLED_APPS:
+    from openedx.stanford.djangoapps.register_cme.models import ExtraInfo
+
+from util.bad_request_rate_limiter import BadRequestRateLimiter
+from util.json_request import JsonResponse, JsonResponseBadRequest
+from xmodule.modulestore.django import modulestore
 
 log = logging.getLogger(__name__)
 
@@ -46,11 +50,15 @@ def request_certificate(request):
             course_key = SlashSeparatedCourseKey.from_deprecated_string(request.POST.get('course_id'))
             course = modulestore().get_course(course_key, depth=2)
 
+            designation = None
+            if 'openedx.stanford.djangoapps.register_cme' in settings.INSTALLED_APPS:
+                designation = ExtraInfo.lookup_professional_designation(student)
+
             status = certificate_status_for_student(student, course_key)['status']
             if status in [CertificateStatuses.unavailable, CertificateStatuses.notpassing, CertificateStatuses.error]:
                 log_msg = u'Grading and certification requested for user %s in course %s via /request_certificate call'
                 log.info(log_msg, username, course_key)
-                status = generate_user_certificates(student, course_key, course=course)
+                status = generate_user_certificates(student, course_key, course=course, designation=designation)
             return HttpResponse(json.dumps({'add_status': status}), content_type='application/json')
         return HttpResponse(json.dumps({'add_status': 'ERRORANONYMOUSUSER'}), content_type='application/json')
 

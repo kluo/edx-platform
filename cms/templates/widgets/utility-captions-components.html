@@ -1,0 +1,44 @@
+<!--
+This def will enumerate through a passed in video components and list them all.
+-->
+<%def name="enum_components(unit_components, actions=True, selected=None, sortable=True)">
+  % for component in unit_components:
+
+  <li class="courseware-unit unit is-draggable" data-locator=${component['location']}>
+
+    <span class="draggable-drop-indicator draggable-drop-indicator-before"><i class="icon fa fa-caret-right"></i></span>
+
+    <label class="section-item">
+
+      <input type="checkbox" class="selectedId" name=${component['location']} value="" onclick="captionUtils.resetSelectAll();" />
+      <span class="component-name">${component['name']}</span>
+
+      <div class="popup">
+        <span class="fa-stack">
+            <i class="fa fa-youtube-square fa-stack-2x platform"></i>
+        </span>
+        <span class="fa-stack local">
+          <i class="fa fa-folder fa-stack-2x"></i>
+          <i class="fa fa-check fa-inverse fa-stack-1x local"></i>
+        </span>
+        <span class="fa-stack remote">
+          <i class="fa fa-cloud fa-stack-2x"></i>
+          <i class="fa fa-check fa-inverse fa-stack-1x remote"></i>
+        </span>
+        <span class="fa-stack sync">
+          <i class="fa fa-square fa-stack-2x"></i>
+          <i class="fa fa-link fa-inverse fa-stack-1x fa-lg sync"></i>
+        </span>
+      </div>
+
+      <div class="item-actions">
+        <i class="fa fa-spinner fa-pulse fa-lg"></i>
+      </div>
+
+    </label>
+
+    <span class="draggable-drop-indicator draggable-drop-indicator-after"><i class="icon fa fa-caret-right"></i></span>
+  </li>
+  % endfor
+</%def>
+

@@ -29,6 +29,7 @@
 
     .inner-wrapper {
       background: $black;
+      color: $white;
       box-shadow: none;
       height: 315px;
       padding: ($baseline/2);
@@ -43,11 +44,17 @@
 
     .inner-wrapper {
       background: $black;
+      color: $white;
       box-shadow: none;
       height: 360px;
       padding: ($baseline/2);
       width: 640px;
     }
+  }
+
+  &.keyword-sub-modal {
+    top: -25px !important;
+    width: grid-width(7);
   }
 
   .inner-wrapper {
@@ -300,6 +307,7 @@
     }
   }
 
+  .keyword-sub-wrapper,
   #help_wrapper, #feedback_form_wrapper, .discussion-alert-wrapper {
     padding: 0 ($baseline*1.5) ($baseline*1.5) ($baseline*1.5);
 
@@ -317,6 +325,10 @@
     }
   }
 
+  #help_wrapper .help-buttons {
+    list-style-type: none;
+  }
+
   .discussion-alert-wrapper button {
     display: block;
     margin: 0 auto;
@@ -328,7 +340,20 @@
     color: $dark-gray;
   }
 
+  .keyword-sub-wrapper table {
+    width: 100%;
+    margin-top: $baseline;
+    color: $base-font-color;
+    td {
+      border: 1px solid black;
+      padding: $baseline/2;
+      vertical-align: middle;
 
+      input {
+        width: 100%;
+      }
+    }
+  }
 }
 
 .leanModal_box {

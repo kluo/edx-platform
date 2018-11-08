@@ -2,41 +2,41 @@
 Base test classes for LMS instructor-initiated background tasks
 
 """
-import os
 import json
-from mock import Mock, patch
+# pylint: disable=attribute-defined-outside-init
+import os
 import shutil
 from tempfile import mkdtemp
-import unicodecsv
 from uuid import uuid4
 
-from celery.states import SUCCESS, FAILURE
-from django.core.urlresolvers import reverse
-from django.test.testcases import TestCase
+import unicodecsv
+from celery.states import FAILURE, SUCCESS
 from django.contrib.auth.models import User
-from lms.djangoapps.lms_xblock.runtime import quote_slashes
+from django.core.urlresolvers import reverse
+from mock import Mock, patch
 from opaque_keys.edx.locations import Location, SlashSeparatedCourseKey
 
 from capa.tests.response_xml_factory import OptionResponseXMLFactory
 from courseware.model_data import StudentModule
 from courseware.tests.tests import LoginEnrollmentTestCase
+from lms.djangoapps.instructor_task.api_helper import encode_problem_and_student_input
+from lms.djangoapps.instructor_task.models import PROGRESS, QUEUING, ReportStore
+from lms.djangoapps.instructor_task.tests.factories import InstructorTaskFactory
+from lms.djangoapps.instructor_task.views import instructor_task_status
+from openedx.core.djangolib.testing.utils import CacheIsolationTestCase
+from openedx.core.lib.url_utils import quote_slashes
 from student.tests.factories import CourseEnrollmentFactory, UserFactory
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
-
-from instructor_task.api_helper import encode_problem_and_student_input
-from instructor_task.models import PROGRESS, QUEUING, ReportStore
-from instructor_task.tests.factories import InstructorTaskFactory
-from instructor_task.views import instructor_task_status
-
+from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory
 
 TEST_COURSE_ORG = 'edx'
 TEST_COURSE_NAME = 'test_course'
 TEST_COURSE_NUMBER = '1.23x'
 TEST_COURSE_KEY = SlashSeparatedCourseKey(TEST_COURSE_ORG, TEST_COURSE_NUMBER, TEST_COURSE_NAME)
-TEST_SECTION_NAME = "Problem"
+TEST_CHAPTER_NAME = "Section"
+TEST_SECTION_NAME = "Subsection"
 
 TEST_FAILURE_MESSAGE = 'task failed horribly'
 TEST_FAILURE_EXCEPTION = 'RandomCauseError'
@@ -45,7 +45,7 @@ OPTION_1 = 'Option 1'
 OPTION_2 = 'Option 2'
 
 
-class InstructorTaskTestCase(TestCase):
+class InstructorTaskTestCase(CacheIsolationTestCase):
     """
     Tests API and view methods that involve the reporting of status for background tasks.
     """
@@ -134,14 +134,18 @@ class InstructorTaskCourseTestCase(LoginEnrollmentTestCase, ModuleStoreTestCase)
         Add a chapter and a sequential to the current course.
         """
         # Add a chapter to the course
-        chapter = ItemFactory.create(parent_location=self.course.location,
-                                     display_name=TEST_SECTION_NAME)
+        self.chapter = ItemFactory.create(
+            parent_location=self.course.location,
+            display_name=TEST_CHAPTER_NAME,
+        )
 
         # add a sequence to the course to which the problems can be added
-        self.problem_section = ItemFactory.create(parent_location=chapter.location,
-                                                  category='sequential',
-                                                  metadata={'graded': True, 'format': 'Homework'},
-                                                  display_name=TEST_SECTION_NAME)
+        self.problem_section = ItemFactory.create(
+            parent_location=self.chapter.location,
+            category='sequential',
+            metadata={'graded': True, 'format': 'Homework'},
+            display_name=TEST_SECTION_NAME,
+        )
 
     @staticmethod
     def get_user_email(username):
@@ -156,21 +160,21 @@ class InstructorTaskCourseTestCase(LoginEnrollmentTestCase, ModuleStoreTestCase)
             self.login(user_email, "test")
             self.current_user = username
 
-    def _create_user(self, username, email=None, is_staff=False, mode='honor'):
+    def _create_user(self, username, email=None, is_staff=False, mode='honor', enrollment_active=True):
         """Creates a user and enrolls them in the test course."""
         if email is None:
             email = InstructorTaskCourseTestCase.get_user_email(username)
         thisuser = UserFactory.create(username=username, email=email, is_staff=is_staff)
-        CourseEnrollmentFactory.create(user=thisuser, course_id=self.course.id, mode=mode)
+        CourseEnrollmentFactory.create(user=thisuser, course_id=self.course.id, mode=mode, is_active=enrollment_active)
         return thisuser
 
     def create_instructor(self, username, email=None):
         """Creates an instructor for the test course."""
         return self._create_user(username, email, is_staff=True)
 
-    def create_student(self, username, email=None, mode='honor'):
+    def create_student(self, username, email=None, mode='honor', enrollment_active=True):
         """Creates a student for the test course."""
-        return self._create_user(username, email, is_staff=False, mode=mode)
+        return self._create_user(username, email, is_staff=False, mode=mode, enrollment_active=enrollment_active)
 
     @staticmethod
     def get_task_status(task_id):
@@ -334,10 +338,10 @@ class TestReportMixin(object):
             file_index (int): Describes which report store file to
                 open.  Files are ordered by last modified date, and 0
                 corresponds to the most recently modified file.
-            verify_order (boolean): When True, we verify that both the
-                content and order of `expected_rows` matches the
-                actual csv rows.  When False (default), we only verify
-                that the content matches.
+            verify_order (boolean): When True (default), we verify that
+                both the content and order of `expected_rows` matches
+                the actual csv rows.  When False, we only verify that
+                the content matches.
             ignore_other_columns (boolean): When True, we verify that `expected_rows`
                 contain data which is the subset of actual csv rows.
         """

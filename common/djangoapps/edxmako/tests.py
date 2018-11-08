@@ -1,22 +1,18 @@
-from mock import patch, Mock
 import unittest
-import ddt
 
-from request_cache.middleware import RequestCache
+import ddt
 from django.conf import settings
+from django.core.urlresolvers import reverse
 from django.http import HttpResponse
 from django.test import TestCase
-from django.test.utils import override_settings
 from django.test.client import RequestFactory
-from django.core.urlresolvers import reverse
+from django.test.utils import override_settings
+from mock import Mock, patch
+
+from edxmako import LOOKUP, add_lookup
 from edxmako.request_context import get_template_request_context
-from edxmako import add_lookup, LOOKUP
-from edxmako.shortcuts import (
-    marketing_link,
-    is_marketing_link_set,
-    is_any_marketing_link_set,
-    render_to_string,
-)
+from edxmako.shortcuts import is_any_marketing_link_set, is_marketing_link_set, marketing_link, render_to_string
+from request_cache.middleware import RequestCache
 from student.tests.factories import UserFactory
 from util.testing import UrlResetMixin
 
@@ -40,6 +36,20 @@ class ShortcutsTests(UrlResetMixin, TestCase):
             expected_link = reverse('login')
             link = marketing_link('ABOUT')
             self.assertEquals(link, expected_link)
+
+    @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
+    @patch.dict('django.conf.settings.MKTG_URL_LINK_MAP', {'COURSES': 'courses'})
+    def test_marketing_link_internal_courses_url(self):
+        expected_link = reverse('courses')
+        link = marketing_link('COURSES')
+        self.assertEqual(link, expected_link)
+
+    @unittest.skipUnless(settings.ROOT_URLCONF == 'lms.urls', 'Test only valid in lms')
+    @patch.dict('django.conf.settings.MKTG_URL_LINK_MAP', {'COURSES': 'https://example.com'})
+    def test_marketing_link_external_courses_url(self):
+        expected_link = 'https://example.com'
+        link = marketing_link('COURSES')
+        self.assertEqual(link, expected_link)
 
     @override_settings(MKTG_URLS={'ROOT': 'https://dummy-root', 'ABOUT': '/about-us'})
     @override_settings(MKTG_URL_LINK_MAP={'ABOUT': 'login'})

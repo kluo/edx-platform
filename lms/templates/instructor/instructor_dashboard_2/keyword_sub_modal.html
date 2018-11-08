@@ -1,0 +1,38 @@
+<%! from django.utils.translation import ugettext as _ %>
+<%page args="keywords_supported"/>
+
+<section id="keyword-sub-modal" class="modal keyword-sub-modal" aria-hidden="true">
+  <div class="inner-wrapper keyword-sub-wrapper" role="dialog" aria-labelledby="keyword-sub-tip-title">
+    <button class="close-modal">
+      <i class="icon fa fa-remove"></i>
+      <span class="sr">
+        ## Translators: this is a control to allow users to exit out of this modal interface (a menu or piece of UI that takes the full focus of the screen)
+        ${_("Close")}
+      </span>
+    </button>
+
+    <header>
+      <h2 id="keyword-sub-tip-title">
+        ${_("Keyword Substitution")}
+        <span class="sr">,
+          ## Translators: this text gives status on if the modal interface (a menu or piece of UI that takes the full focus of the screen) is open or not
+          ${_("window open")}
+        </span>
+      </h2>
+      <hr/>
+    </header>
+
+    <p>
+      ${_("Copy and paste keywords on the left into your email message. They will be replaced by the values on the right for each student when the email is sent.")}
+    </p>
+    <table>
+      % for keyword in keywords_supported:
+        <tr>
+          <td><input type="text" value="${keyword['name']}" readonly="readonly" /></td>
+          <td>${keyword['desc']}</td>
+        </tr>
+      % endfor
+    </table>
+
+  </div>
+</section>

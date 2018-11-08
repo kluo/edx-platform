@@ -3,12 +3,12 @@ Functionality for problem scores.
 """
 from logging import getLogger
 
-from openedx.core.lib.cache_utils import memoized
 from xblock.core import XBlock
-from xmodule.block_metadata_utils import display_name_with_default_escaped
-from xmodule.graders import ProblemScore
-from .transformer import GradesTransformer
 
+from openedx.core.lib.cache_utils import memoized
+from xmodule.graders import ProblemScore
+
+from .transformer import GradesTransformer
 
 log = getLogger(__name__)
 
@@ -102,26 +102,45 @@ def get_score(submissions_scores, csm_scores, persisted_block, block):
 
     # Priority order for retrieving the scores:
     # submissions API -> CSM -> grades persisted block -> latest block content
-    raw_earned, raw_possible, weighted_earned, weighted_possible = (
+    raw_earned, raw_possible, weighted_earned, weighted_possible, first_attempted = (
         _get_score_from_submissions(submissions_scores, block) or
         _get_score_from_csm(csm_scores, block, weight) or
         _get_score_from_persisted_or_latest_block(persisted_block, block, weight)
     )
 
-    assert weighted_possible is not None
-    has_valid_denominator = weighted_possible > 0.0
-    graded = _get_graded_from_block(persisted_block, block) if has_valid_denominator else False
+    if weighted_possible is None or weighted_earned is None:
+        return None
 
-    return ProblemScore(
-        raw_earned,
-        raw_possible,
-        weighted_earned,
-        weighted_possible,
-        weight,
-        graded,
-        display_name=display_name_with_default_escaped(block),
-        module_id=block.location,
-    )
+    else:
+        has_valid_denominator = weighted_possible > 0.0
+        graded = _get_graded_from_block(persisted_block, block) if has_valid_denominator else False
+
+        return ProblemScore(
+            raw_earned,
+            raw_possible,
+            weighted_earned,
+            weighted_possible,
+            weight,
+            graded,
+            first_attempted=first_attempted,
+        )
+
+
+def weighted_score(raw_earned, raw_possible, weight):
+    """
+    Returns a tuple that represents the weighted (earned, possible) score.
+    If weight is None or raw_possible is 0, returns the original values.
+
+    When weight is used, it defines the weighted_possible.  This allows
+    course authors to specify the exact maximum value for a problem when
+    they provide a weight.
+    """
+    assert raw_possible is not None
+    cannot_compute_with_weight = weight is None or raw_possible == 0
+    if cannot_compute_with_weight:
+        return raw_earned, raw_possible
+    else:
+        return float(raw_earned) * weight / raw_possible, float(weight)
 
 
 def _get_score_from_submissions(submissions_scores, block):
@@ -131,9 +150,11 @@ def _get_score_from_submissions(submissions_scores, block):
     if submissions_scores:
         submission_value = submissions_scores.get(unicode(block.location))
         if submission_value:
-            weighted_earned, weighted_possible = submission_value
+            first_attempted = submission_value['created_at']
+            weighted_earned = submission_value['points_earned']
+            weighted_possible = submission_value['points_possible']
             assert weighted_earned >= 0.0 and weighted_possible > 0.0  # per contract from submissions API
-            return (None, None) + (weighted_earned, weighted_possible)
+            return (None, None) + (weighted_earned, weighted_possible) + (first_attempted,)
 
 
 def _get_score_from_csm(csm_scores, block, weight):
@@ -155,9 +176,15 @@ def _get_score_from_csm(csm_scores, block, weight):
     score = csm_scores.get(block.location)
     has_valid_score = score and score.total is not None
     if has_valid_score:
-        raw_earned = score.correct if score.correct is not None else 0.0
+        if score.correct is not None:
+            first_attempted = score.created
+            raw_earned = score.correct
+        else:
+            first_attempted = None
+            raw_earned = 0.0
+
         raw_possible = score.total
-        return (raw_earned, raw_possible) + _weighted_score(raw_earned, raw_possible, weight)
+        return (raw_earned, raw_possible) + weighted_score(raw_earned, raw_possible, weight) + (first_attempted,)
 
 
 def _get_score_from_persisted_or_latest_block(persisted_block, block, weight):
@@ -168,13 +195,20 @@ def _get_score_from_persisted_or_latest_block(persisted_block, block, weight):
     the latest block content.
     """
     raw_earned = 0.0
+    first_attempted = None
 
     if persisted_block:
         raw_possible = persisted_block.raw_possible
     else:
         raw_possible = block.transformer_data[GradesTransformer].max_score
 
-    return (raw_earned, raw_possible) + _weighted_score(raw_earned, raw_possible, weight)
+    # TODO TNL-5982 remove defensive code for scorables without max_score
+    if raw_possible is None:
+        weighted_scores = (None, None)
+    else:
+        weighted_scores = weighted_score(raw_earned, raw_possible, weight)
+
+    return (raw_earned, raw_possible) + weighted_scores + (first_attempted,)
 
 
 def _get_weight_from_block(persisted_block, block):
@@ -214,23 +248,6 @@ def _get_explicit_graded(block):
     # in the aggregated self.graded_total, regardless of the
     # inherited graded value from the subsection. (TNL-5560)
     return True if field_value is None else field_value
-
-
-def _weighted_score(raw_earned, raw_possible, weight):
-    """
-    Returns a tuple that represents the weighted (earned, possible) score.
-    If weight is None or raw_possible is 0, returns the original values.
-
-    When weight is used, it defines the weighted_possible.  This allows
-    course authors to specify the exact maximum value for a problem when
-    they provide a weight.
-    """
-    assert raw_possible is not None
-    cannot_compute_with_weight = weight is None or raw_possible == 0
-    if cannot_compute_with_weight:
-        return raw_earned, raw_possible
-    else:
-        return float(raw_earned) * weight / raw_possible, float(weight)
 
 
 @memoized

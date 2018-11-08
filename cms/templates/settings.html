@@ -87,7 +87,7 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
             <h3 class="title">${_("Course Summary Page")} <span class="tip">${_("(for student enrollment and access)")}</span></h3>
             <div class="copy">
               <%
-                link_for_about_page = ("https:" if is_secure else "http:") + lms_link_for_about_page
+                link_for_about_page = lms_link_for_about_page
               %>
               <p><a class="link-courseURL" rel="external" href="${link_for_about_page}">${link_for_about_page}</a></p>
             </div>
@@ -238,7 +238,7 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
                 <span class="tip tip-stacked">
                   ${_("Last day students can enroll.")}
                 % if not enrollment_end_editable:
-                  ${_("Contact your edX Partner Manager to update these settings.")}
+                  ${_("Contact your edX partner manager to update these settings.")}
                 % endif
                 </span>
               </div>
@@ -284,7 +284,7 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
                   <option value="${lang}">${label}</option>
                 % endfor
               </select>
-              <span class="tip tip-stacked">${_("Identify the course language here. This is used to assist users find courses that are taught in a specific language.")}</span>
+              <span class="tip tip-stacked">${_("Identify the course language here. This is used to assist users find courses that are taught in a specific language. It is also used to localize the 'From:' field in bulk emails.")}</span>
             </li>
           </ol>
         </div>
@@ -333,8 +333,21 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
                 <li class="field text" id="field-course-overview">
                   <label for="course-overview">${_("Course Overview")}</label>
                   <textarea class="tinymce text-editor" id="course-overview"></textarea>
+                  <label class="sr" for="course-overview-cm-textarea">
+                    ${_('HTML Code Editor')}
+                  </label>
                   <span class="tip tip-stacked">${
                     Text(_("Introductions, prerequisites, FAQs that are used on {a_link_start}your course summary page{a_link_end} (formatted in HTML)")).format(
+                      a_link_start=HTML("<a class='link-courseURL' rel='external' href='{lms_link_for_about_page}'>").format(lms_link_for_about_page=lms_link_for_about_page),
+                      a_link_end=HTML("</a>")
+                    )}</span>
+                </li>
+                
+                <li class="field text" id="field-course-about-sidebar-html">
+                    <label for="course-about-sidebar-html">${_("Course About Sidebar HTML")}</label>
+                    <textarea class="tinymce text-editor" id="course-about-sidebar-html"></textarea>
+                    <span class="tip tip-stacked">${
+                    Text(_("Custom sidebar content for {a_link_start}your course summary page{a_link_end} (formatted in HTML)")).format(
                       a_link_start=HTML("<a class='link-courseURL' rel='external' href='{lms_link_for_about_page}'>").format(lms_link_for_about_page=lms_link_for_about_page),
                       a_link_end=HTML("</a>")
                     )}</span>
@@ -498,6 +511,74 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
             </div>
           % endif
 
+        % if settings.FEATURES.get('ENABLE_ENROLLMENT_EMAIL'):
+        <hr class="divide" />
+        <section class="group-settings enrollment-email">
+          <header>
+            <h2 class="title-2">${_("Course Enrollment Email")}</h2>
+            <span class="tip">${_("Settings for emails that students receive upon course enrollment")}</span>
+          </header>
+          <section class="group-settings">
+            <p>${Text(_("{strong_start}By default, this feature is disabled.{strong_end} You can either use the default email content or create your own. "
+            "Students enrolling right on the start date will receive the post-course-start email. "
+            "{strong_start}Email bodies support {link_start}keyword substitution{link_end}.{strong_end}")).format(
+                strong_start=HTML("<strong>"),
+                strong_end=HTML("</strong>"),
+                link_start=HTML("<a rel='modal' href='#keyword-sub-modal'>"),
+                link_end=HTML("</a>")
+              )}
+              <br />
+            </p>
+            <input type="checkbox" id="enable-enrollment-email"/><!-- IMPORTANT -->
+            <label for="enable-enrollment-email">${_("Enable enrollment emails")}</label>
+          </section>
+          <section class="group-settings" id="enrollment-email-settings"><!-- IMPORTANT -->
+            <section class="group-settings" id="custom-enrollment-email-settings"><!-- IMPORTANT -->
+              <section class="group-settings">
+                <p>
+                  ${Text(_("Message for students who enroll {strong_start}before the start date{strong_end}")).format(strong_start=HTML("<strong>"), strong_end=HTML("</strong>"))}
+                  <a class="send-test-email" id='test_email_pre' title="${_('Send me a copy of this via email')}" href="#" data-endpoint="${test_email_url}">${_("Send me a test email")}</a>
+                  <a class="fill-default-email" id='fill_default_email_pre' title="${_('Reset to default content')}" href="#">${_("Reset to default content")}</a>
+                </p>
+                <ol class="list-input">
+                  <li class="field text">
+                    <p>
+                      <label for="pre-enrollment-email-subject">${_("Subject of the Email")}</label>
+                      <input type="text" class='text subject' id="pre-enrollment-email-subject"/>
+                    </p>
+                    <p>
+                      <label for="pre-enrollment-email">${_("Body of the Email")}</label>
+                      <textarea class="tinymce text-editor" id="pre-enrollment-email"></textarea>
+                      <span class="tip tip-stacked">${_("This email will be sent to any student who enrolls in the course before its start date.")}</span>
+                    </p>
+                  </li>
+                </ol>
+              </section>
+              <section class="group-settings">
+                <p>
+                  ${Text(_("Message for students who enroll {strong_start}on or after the start date{strong_end}")).format(strong_start=HTML("<strong>"), strong_end=HTML("</strong>"))}
+                  <a class="send-test-email" id='test_email_post' title="${_('Send me a copy of this via email')}" href="#" data-endpoint="${test_email_url}">${_("Send me a test email")}</a>
+                  <a class="fill-default-email" id='fill_default_email_post' title="${_('Reset to default content')}" href="#">${_("Reset to default content")}</a>
+                </p>
+                <ol class="list-input">
+                  <li class="field text">
+                    <p>
+                      <label for="post-enrollment-email-subject">${_("Subject of the Email")}</label>
+                      <input type="text" class='text subject' id="post-enrollment-email-subject"/>
+                    </p>
+                    <p>
+                      <label for="post-enrollment-email">${_("Body of the Email")}</label>
+                      <textarea class="tinymce text-editor" id="post-enrollment-email"></textarea>
+                      <span class="tip tip-stacked">${_("This email will be sent to any student who enrolls in the course after its start date.")}</span>
+                    </p>
+                  </li>
+                </ol>
+              </section>
+            </section>
+          </section>
+        </section>
+        % endif
+
           % if about_page_editable or is_prerequisite_courses_enabled or is_entrance_exams_enabled:
             <hr class="divide" />
 
@@ -629,5 +710,9 @@ CMS.URL.UPLOAD_ASSET = '${upload_asset_url | n, js_escaped_string}'
      </div>
     </div>
   </div>
+  <div id="default_pre_enrollment_email_template" style="display:none;">${default_pre_template}</div>
+  <div id="default_post_enrollment_email_template" style="display:none;">${default_post_template}</div>
 </div>
+
+<%include file='keyword_sub_modal.html' args="keywords_supported=keywords_supported, content_type=_('email body')"/>
 </%block>

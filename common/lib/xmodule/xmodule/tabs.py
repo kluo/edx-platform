@@ -1,10 +1,12 @@
 """
 Implement CourseTab
 """
-from abc import ABCMeta
 import logging
+from abc import ABCMeta
 
+from django.core.files.storage import get_storage_class
 from xblock.fields import List
+
 from openedx.core.lib.api.plugins import PluginError
 
 log = logging.getLogger("edx.courseware")
@@ -12,6 +14,9 @@ log = logging.getLogger("edx.courseware")
 # Make '_' a no-op so we can scrape strings. Using lambda instead of
 #  `django.utils.translation.ugettext_noop` because Django cannot be imported in this file
 _ = lambda text: text
+
+# A list of attributes on course tabs that can not be updated
+READ_ONLY_COURSE_TAB_ATTRIBUTES = ['type']
 
 
 class CourseTab(object):
@@ -30,6 +35,12 @@ class CourseTab(object):
     # The title of the tab, which should be internationalized using
     # ugettext_noop since the user won't be available in this context.
     title = None
+
+    # HTML class to add to the tab page's body, or None if no class it to be added
+    body_class = None
+
+    # Token to identify the online help URL, or None if no help is provided
+    online_help_token = None
 
     # Class property that specifies whether the tab can be hidden for a particular course
     is_hideable = False
@@ -58,6 +69,15 @@ class CourseTab(object):
     # If there is a single view associated with this tab, this is the name of it
     view_name = None
 
+    # True if this tab can be displaed to sneak peek users
+    is_visible_to_sneak_peek = False
+
+    # True if this tab should be displayed only for instructors
+    course_staff_only = False
+
+    # True if this tab supports showing staff users a preview menu
+    supports_preview_menu = False
+
     def __init__(self, tab_dict):
         """
         Initializes class members with values passed in by subclasses.
@@ -65,12 +85,21 @@ class CourseTab(object):
         Args:
             tab_dict (dict) - a dictionary of parameters used to build the tab.
         """
-
+        super(CourseTab, self).__init__()
         self.name = tab_dict.get('name', self.title)
         self.tab_id = tab_dict.get('tab_id', getattr(self, 'tab_id', self.type))
-        self.link_func = tab_dict.get('link_func', link_reverse_func(self.view_name))
-
+        self.course_staff_only = tab_dict.get('course_staff_only', False)
         self.is_hidden = tab_dict.get('is_hidden', False)
+
+        self.tab_dict = tab_dict
+
+    @property
+    def link_func(self):
+        """
+        Returns a function that takes a course and reverse function and will
+        compute the course URL for this tab.
+        """
+        return self.tab_dict.get('link_func', course_reverse_func(self.view_name))
 
     @classmethod
     def is_enabled(cls, course, user=None):
@@ -97,14 +126,8 @@ class CourseTab(object):
         This method allows callers to access CourseTab members with the d[key] syntax as is done with
         Python dictionary objects.
         """
-        if key == 'name':
-            return self.name
-        elif key == 'type':
-            return self.type
-        elif key == 'tab_id':
-            return self.tab_id
-        elif key == 'is_hidden':
-            return self.is_hidden
+        if hasattr(self, key):
+            return getattr(self, key, None)
         else:
             raise KeyError('Key {0} not present in tab {1}'.format(key, self.to_json()))
 
@@ -115,12 +138,8 @@ class CourseTab(object):
 
         Note: the 'type' member can be 'get', but not 'set'.
         """
-        if key == 'name':
-            self.name = value
-        elif key == 'tab_id':
-            self.tab_id = value
-        elif key == 'is_hidden':
-            self.is_hidden = value
+        if hasattr(self, key) and key not in READ_ONLY_COURSE_TAB_ATTRIBUTES:
+            setattr(self, key, value)
         else:
             raise KeyError('Key {0} cannot be set in tab {1}'.format(key, self.to_json()))
 
@@ -179,7 +198,7 @@ class CourseTab(object):
         Returns:
             a dictionary with keys for the properties of the CourseTab object.
         """
-        to_json_val = {'type': self.type, 'name': self.name}
+        to_json_val = {'type': self.type, 'name': self.name, 'course_staff_only': self.course_staff_only}
         if self.is_hidden:
             to_json_val.update({'is_hidden': True})
         return to_json_val
@@ -222,6 +241,54 @@ class CourseTab(object):
         return tab_type(tab_dict=tab_dict)
 
 
+class TabFragmentViewMixin(object):
+    """
+    A mixin for tabs that render themselves as web fragments.
+    """
+    fragment_view_name = None
+
+    def __init__(self, tab_dict):
+        super(TabFragmentViewMixin, self).__init__(tab_dict)
+        self._fragment_view = None
+
+    @property
+    def link_func(self):
+        """ Returns a function that returns the course tab's URL. """
+
+        # If a view_name is specified, then use the default link function
+        if self.view_name:
+            return super(TabFragmentViewMixin, self).link_func
+
+        # If not, then use the generic course tab URL
+        def link_func(course, reverse_func):
+            """ Returns a function that returns the course tab's URL. """
+            return reverse_func("course_tab_view", args=[course.id.to_deprecated_string(), self.type])
+
+        return link_func
+
+    @property
+    def url_slug(self):
+        """
+        Returns the slug to be included in this tab's URL.
+        """
+        return "tab/" + self.type
+
+    @property
+    def fragment_view(self):
+        """
+        Returns the view that will be used to render the fragment.
+        """
+        if not self._fragment_view:
+            self._fragment_view = get_storage_class(self.fragment_view_name)()
+        return self._fragment_view
+
+    def render_to_fragment(self, request, course, **kwargs):
+        """
+        Renders this tab to a web fragment.
+        """
+        return self.fragment_view.render_to_fragment(request, course_id=unicode(course.id), **kwargs)
+
+
 class StaticTab(CourseTab):
     """
     A custom tab.
@@ -229,10 +296,11 @@ class StaticTab(CourseTab):
     type = 'static_tab'
     is_default = False  # A static tab is never added to a course by default
     allow_multiple = True
+    is_visible_to_sneak_peek = True
 
     def __init__(self, tab_dict=None, name=None, url_slug=None):
         def link_func(course, reverse_func):
-            """ Returns a url for a given course and reverse function. """
+            """ Returns a function that returns the static tab's URL. """
             return reverse_func(self.type, args=[course.id.to_deprecated_string(), self.url_slug])
 
         self.url_slug = tab_dict.get('url_slug') if tab_dict else url_slug
@@ -371,13 +439,26 @@ class CourseTabList(List):
         return next((tab for tab in tab_list if tab.tab_id == tab_id), None)
 
     @staticmethod
-    def iterate_displayable(course, user=None, inline_collections=True):
+    def iterate_displayable(
+        course,
+        user=None,
+        inline_collections=True,
+        settings=None,
+        is_user_authenticated=True,
+        is_user_staff=True,
+        is_user_enrolled=False,
+        is_user_sneakpeek=False,
+    ):
         """
         Generator method for iterating through all tabs that can be displayed for the given course and
         the given user with the provided access settings.
         """
         for tab in course.tabs:
-            if tab.is_enabled(course, user=user) and not (user and tab.is_hidden):
+            if (
+                tab.is_enabled(course, user=user) and
+                (not (user and tab.is_hidden)) and
+                (not is_user_sneakpeek or tab.is_visible_to_sneak_peek)
+            ):
                 if tab.is_collection:
                     # If rendering inline that add each item in the collection,
                     # else just show the tab itself as long as it is not empty.
@@ -426,13 +507,6 @@ class CourseTabList(List):
         if tabs[1].get('type') != 'courseware':
             raise InvalidTabsException(
                 "Expected second tab to have type 'courseware'.  tabs: '{0}'".format(tabs))
-
-        # the following tabs should appear only once
-        # TODO: don't import openedx capabilities from common
-        from openedx.core.lib.course_tabs import CourseTabPluginManager
-        for tab_type in CourseTabPluginManager.get_tab_types():
-            if not tab_type.allow_multiple:
-                cls._validate_num_tabs_of_type(tabs, tab_type.type, 1)
 
     @staticmethod
     def _validate_num_tabs_of_type(tabs, tab_type, max_num):
@@ -503,14 +577,46 @@ def key_checker(expected_keys):
     return check
 
 
-def link_reverse_func(reverse_name):
+def course_reverse_func(reverse_name):
     """
-    Returns a function that takes in a course and reverse_url_func,
-    and calls the reverse_url_func with the given reverse_name and course's ID.
+    Returns a function that will determine a course URL for the provided
+    reverse_name.
 
-    This is used to generate the url for a CourseTab without having access to Django's reverse function.
+    See documentation for course_reverse_func_from_name_func.  This function
+    simply calls course_reverse_func_from_name_func after wrapping reverse_name
+    in a function.
     """
-    return lambda course, reverse_url_func: reverse_url_func(reverse_name, args=[course.id.to_deprecated_string()])
+    return course_reverse_func_from_name_func(lambda course: reverse_name)
+
+
+def course_reverse_func_from_name_func(reverse_name_func):
+    """
+    Returns a function that will determine a course URL for the provided
+    reverse_name_func.
+
+    Use this when the calculation of the reverse_name is dependent on the
+    course. Otherwise, use the simpler course_reverse_func.
+
+    This can be used to generate the url for a CourseTab without having
+    immediate access to Django's reverse function.
+
+    Arguments:
+        reverse_name_func (function): A function that takes a single argument
+            (Course) and returns the name to be used with the reverse function.
+
+    Returns:
+        A function that takes in two arguments:
+            course (Course): the course in question.
+            reverse_url_func (function): a reverse function for a course URL
+                that uses the course ID in the url.
+        When called, the returned function will return the course URL as
+        determined by calling reverse_url_func with the reverse_name and the
+        course's ID.
+    """
+    return lambda course, reverse_url_func: reverse_url_func(
+        reverse_name_func(course),
+        args=[course.id.to_deprecated_string()]
+    )
 
 
 def need_name(dictionary, raise_error=True):

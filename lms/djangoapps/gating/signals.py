@@ -2,30 +2,38 @@
 Signal handlers for the gating djangoapp
 """
 from django.dispatch import receiver
-from lms.djangoapps.grades.signals.signals import SUBSECTION_SCORE_UPDATED
+
 from gating import api as gating_api
+from lms.djangoapps.grades.signals.signals import SUBSECTION_SCORE_CHANGED
+from openedx.core.djangoapps.signals.signals import COURSE_GRADE_CHANGED
 
 
-@receiver(SUBSECTION_SCORE_UPDATED)
-def handle_subsection_score_updated(**kwargs):
+@receiver(SUBSECTION_SCORE_CHANGED)
+def evaluate_subsection_gated_milestones(**kwargs):
     """
-    Receives the SCORE_CHANGED signal sent by LMS when a student's score has changed
-    for a given component and triggers the evaluation of any milestone relationships
-    which are attached to the updated content.
+    Receives the SUBSECTION_SCORE_CHANGED signal and triggers the
+    evaluation of any milestone relationships which are attached
+    to the subsection.
 
     Arguments:
-        kwargs (dict): Contains user ID, course key, and content usage key
-
+        kwargs (dict): Contains user, course, course_structure, subsection_grade
     Returns:
         None
     """
-    course = kwargs['course']
-    if course.enable_subsection_gating:
-        subsection_grade = kwargs['subsection_grade']
-        new_score = subsection_grade.graded_total.earned / subsection_grade.graded_total.possible * 100.0
-        gating_api.evaluate_prerequisite(
-            course,
-            kwargs['user'],
-            subsection_grade.location,
-            new_score,
-        )
+    subsection_grade = kwargs['subsection_grade']
+    gating_api.evaluate_prerequisite(kwargs['course'], subsection_grade, kwargs.get('user'))
+
+
+@receiver(COURSE_GRADE_CHANGED)
+def evaluate_course_gated_milestones(**kwargs):
+    """
+    Receives the COURSE_GRADE_CHANGED signal and triggers the
+    evaluation of any milestone relationships which are attached
+    to the course grade.
+
+    Arguments:
+        kwargs (dict): Contains user, course_grade
+    Returns:
+        None
+    """
+    gating_api.evaluate_entrance_exam(kwargs['course_grade'], kwargs.get('user'))

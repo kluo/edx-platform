@@ -1,10 +1,12 @@
 define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui', 'js/utils/date_utils',
     'js/models/uploads', 'js/views/uploads', 'js/views/license', 'js/models/license',
     'common/js/components/views/feedback_notification', 'jquery.timepicker', 'date', 'gettext',
-    'js/views/learning_info', 'js/views/instructor_info', 'edx-ui-toolkit/js/utils/string-utils'],
+    'js/views/learning_info', 'js/views/instructor_info', 'edx-ui-toolkit/js/utils/string-utils',
+    "js/utils/change_on_enter", "common/js/components/utils/view_utils"],
        function(ValidatingView, CodeMirror, _, $, ui, DateUtils, FileUploadModel,
                 FileUploadDialog, LicenseView, LicenseModel, NotificationView,
-                timepicker, date, gettext, LearningInfoView, InstructorInfoView, StringUtils) {
+                timepicker, date, gettext, LearningInfoView, InstructorInfoView, StringUtils,
+                TriggerChangeEventOnEnter, ViewUtils) {
            var DetailsView = ValidatingView.extend({
     // Model class is CMS.Models.Settings.CourseDetails
                events: {
@@ -16,6 +18,18 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    'change select': 'updateModel',
                    'click .remove-course-introduction-video': 'removeVideo',
                    'focus #course-overview': 'codeMirrorize',
+
+                   // Stanford event definitions
+                   'focus #course-about-sidebar-html' : "codeMirrorize",
+                   'click #enable-enrollment-email' : "toggleEnrollmentEmails",
+                   'focus #pre-enrollment-email' : "codeMirrorize",
+                   'focus #post-enrollment-email' : "codeMirrorize",
+                   'click #test_email_pre': "sendTestEmail",
+                   'click #test_email_post': "sendTestEmail",
+                   'click #fill_default_email_pre': "showDefaultTemplate",
+                   'click #fill_default_email_post': "showDefaultTemplate",
+                   // / Stanford event definitions
+
                    'mouseover .timezone': 'updateTime',
         // would love to move to a general superclass, but event hashes don't inherit in backbone :-(
                    'focus :input': 'inputFocus',
@@ -45,6 +59,28 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    this.listenTo(this.model, 'invalid', this.handleValidationError);
                    this.listenTo(this.model, 'change', this.showNotificationBar);
                    this.selectorToField = _.invert(this.fieldToSelectorMap);
+
+                   // Stanford Enrollment Email elements
+                   /* Memoize html elements for enrollment emails */
+                   this.enrollment_email_settings = this.$el.find('#enrollment-email-settings');
+                   this.custom_enrollment_email_settings = this.$el.find('#custom-enrollment-email-settings');
+
+                   this.pre_enrollment_email_elem = this.$el.find('#' + this.fieldToSelectorMap['pre_enrollment_email']);
+                   this.pre_enrollment_email_subject_elem = this.$el.find('#' + this.fieldToSelectorMap['pre_enrollment_email_subject']);
+                   this.pre_enrollment_email_field = this.$el.find('#field-pre-enrollment-email');
+                   this.pre_enrollment_email_subject_field = this.$el.find('#field-pre-enrollment-email-subject');
+
+                   this.post_enrollment_email_elem = this.$el.find('#' + this.fieldToSelectorMap['post_enrollment_email']);
+                   this.post_enrollment_email_subject_elem = this.$el.find('#' + this.fieldToSelectorMap['post_enrollment_email_subject']);
+                   this.post_enrollment_email_field = this.$el.find('#field-post-enrollment-email');
+                   this.post_enrollment_email_subject_field = this.$el.find('#field-post-enrollment-email-subject');
+
+                   this.enable_enrollment_email_box = this.$el.find('#' + this.fieldToSelectorMap['enable_enrollment_email']);
+
+                   this.default_pre_template = this.$el.find('#default_pre_enrollment_email_template');
+                   this.default_post_template = this.$el.find('#default_post_enrollment_email_template');
+                   // / Stanford Enrollment Email elements
+
         // handle license separately, to avoid reimplementing view logic
                    this.licenseModel = new LicenseModel({'asString': this.model.get('license')});
                    this.licenseView = new LicenseView({
@@ -94,6 +130,28 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    this.$el.find('#' + this.fieldToSelectorMap.subtitle).val(this.model.get('subtitle'));
                    this.$el.find('#' + this.fieldToSelectorMap.duration).val(this.model.get('duration'));
                    this.$el.find('#' + this.fieldToSelectorMap.description).val(this.model.get('description'));
+
+                   // Stanford set values
+                   this.$el.find('#' + this.fieldToSelectorMap['about_sidebar_html']).val(this.model.get('about_sidebar_html'));
+                   this.codeMirrorize(null, $('#course-about-sidebar-html')[0]);
+
+                   this.pre_enrollment_email_subject_elem.val(this.model.get('pre_enrollment_email_subject'));
+                   this.post_enrollment_email_subject_elem.val(this.model.get('post_enrollment_email_subject'));
+
+                   this.pre_enrollment_email_elem.val(this.model.get('pre_enrollment_email'));
+                   this.codeMirrorize(null, $('#pre-enrollment-email')[0]);
+
+                   this.post_enrollment_email_elem.val(this.model.get('post_enrollment_email'));
+                   this.codeMirrorize(null, $('#post-enrollment-email')[0]);
+
+                   this.enable_enrollment_email_box.prop('checked', this.model.get('enable_enrollment_email'));
+                   // / Stanford set values
+
+                    if (this.enable_enrollment_email_box.prop('checked')) {
+                        this.enrollment_email_settings.show();
+                    } else {
+                        this.enrollment_email_settings.hide();
+                    }
 
                    this.$el.find('#' + this.fieldToSelectorMap['short_description']).val(this.model.get('short_description'));
 
@@ -164,6 +222,15 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    'subtitle': 'course-subtitle',
                    'duration': 'course-duration',
                    'description': 'course-description',
+                   // Stanford field selectors
+                   'about_sidebar_html' : 'course-about-sidebar-html',
+                   'pre_enrollment_email' : 'pre-enrollment-email',
+                   'post_enrollment_email' : 'post-enrollment-email',
+                   'enable_enrollment_email': 'enable-enrollment-email',
+                   'pre_enrollment_email_subject' :'pre-enrollment-email-subject',
+                   'post_enrollment_email_subject':'post-enrollment-email-subject',
+                   'enable_default_enrollment_email':'enable-default-enrollment-email',
+                    // / Stanford field selectors
                    'short_description': 'course-short-description',
                    'intro_video': 'course-introduction-video',
                    'effort': 'course-effort',
@@ -254,6 +321,14 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    case 'video-thumbnail-image-url':
                        this.updateImageField(event, 'video_thumbnail_image_name', '#video-thumbnail-image');
                        break;
+                   // Stanford Cases
+                   case 'pre-enrollment-email-subject':
+                       this.setField(event);
+                       break;
+                   case 'post-enrollment-email-subject':
+                       this.setField(event);
+                       break;
+                   // / Stanford Cases
                    case 'entrance-exam-enabled':
                        if ($(event.currentTarget).is(':checked')) {
                            this.$('.div-grade-requirements').show();
@@ -335,9 +410,26 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                        this.$el.find('.remove-course-introduction-video').hide();
                    }
                },
+               // Stanford Functions
+               toggleEnrollmentEmails: function(event) {
+                   var isChecked = this.enable_enrollment_email_box.prop('checked');
+
+                   /* enable & disable default will show the template */
+                   if(isChecked) {
+                       this.enrollment_email_settings.slideDown();
+                   } else {
+                       this.enrollment_email_settings.slideUp();
+                   }
+
+                   var field = this.selectorToField['enable-enrollment-email'];
+                   if (this.model.get(field) != isChecked) {
+                       this.setAndValidate(field, isChecked);
+                   }
+               },
+               // / Stanford Functions
                codeMirrors: {},
                codeMirrorize: function(e, forcedTarget) {
-                   var thisTarget;
+                   var thisTarget, cachethis, field, cmTextArea;
                    if (forcedTarget) {
                        thisTarget = forcedTarget;
                        thisTarget.id = $(thisTarget).attr('id');
@@ -354,8 +446,8 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    }
 
                    if (!this.codeMirrors[thisTarget.id]) {
-                       var cachethis = this;
-                       var field = this.selectorToField[thisTarget.id];
+                       cachethis = this;
+                       field = this.selectorToField[thisTarget.id];
                        this.codeMirrors[thisTarget.id] = CodeMirror.fromTextArea(thisTarget, {
                            mode: 'text/html', lineNumbers: true, lineWrapping: true});
                        this.codeMirrors[thisTarget.id].on('change', function(mirror) {
@@ -366,6 +458,8 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                                cachethis.setAndValidate(field, newVal);
                            }
                        });
+                       cmTextArea = this.codeMirrors[thisTarget.id].getInputField();
+                       cmTextArea.setAttribute('id', 'course-overview-cm-textarea');
                    }
                },
 
@@ -450,6 +544,66 @@ define(['js/views/validation', 'codemirror', 'underscore', 'jquery', 'jquery.ui'
                    });
                    modal.show();
                },
+
+                // Stanford Functions
+                sendTestEmail: function (event) {
+                    event.preventDefault();
+                    var email_type = event.target.id;
+                    var subject = "";
+                    var message = "";
+                    var validation;
+                    if (email_type === "test_email_pre") {
+                        subject = this.pre_enrollment_email_subject_elem.val();
+                        message = this.pre_enrollment_email_elem.val();
+                    } else {
+                        subject = this.post_enrollment_email_subject_elem.val();
+                        message = this.post_enrollment_email_elem.val();
+                    }
+
+                    validation = ViewUtils.keywordValidator.validateString(message);
+                    if (!validation.isValid) {
+                        message = gettext('There are invalid keywords in your email. Please check the following keywords and try again:');
+                        message += "\n" + validation.keywordsInvalid.join('\n');
+                        window.alert(message);
+                        return;
+                    }
+
+                    $.post($(event.target).data('endpoint'),
+                           {
+                             subject: subject,
+                             message:message
+                           },
+                           function (data) {
+                               alert(gettext("Test email sent! Please check your inbox. Don't forget to save!"));
+                           }
+                    );
+                },
+
+                showDefaultTemplate: function (event) {
+                    event.preventDefault();
+
+                    var content = "";
+                    var codeMirrorItem;
+                    var oldContent = "";
+                    var target_id = event.target.id;
+
+                    if (target_id === "fill_default_email_pre") {
+                        content = $('#default_pre_enrollment_email_template').text();
+                        codeMirrorItem = this.codeMirrors[this.pre_enrollment_email_elem[0].id];
+                        oldContent = codeMirrorItem.getValue();
+                    } else {
+                        content = $('#default_post_enrollment_email_template').text();
+                        codeMirrorItem = this.codeMirrors[this.post_enrollment_email_elem[0].id];
+                        oldContent = codeMirrorItem.getValue();
+                    }
+
+                    if (oldContent.trim() !== "") {
+                        var confirmed = confirm(gettext("This will overwrite the current message with the default one. Do you wish to continue?"));
+                        if (!confirmed) return;
+                    }
+                    codeMirrorItem.setValue(content);
+                },
+                // / Stanford Functions
 
                handleLicenseChange: function() {
                    this.showNotificationBar();

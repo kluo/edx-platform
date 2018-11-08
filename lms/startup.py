@@ -2,6 +2,8 @@
 Module for code that should run during LMS startup
 """
 
+import logging
+
 import django
 from django.conf import settings
 
@@ -10,12 +12,10 @@ from django.conf import settings
 settings.INSTALLED_APPS  # pylint: disable=pointless-statement
 
 from openedx.core.lib.django_startup import autostartup
-import logging
+from openedx.core.release import doc_version
 import analytics
-from monkey_patch import (
-    third_party_auth,
-    django_db_models_options
-)
+
+from openedx.core.djangoapps.monkey_patch import django_db_models_options
 
 import xmodule.x_module
 import lms_xblock.runtime
@@ -33,7 +33,6 @@ def run():
     """
     Executed during django startup
     """
-    third_party_auth.patch()
     django_db_models_options.patch()
 
     # To override the settings before executing the autostartup() for python-social-auth
@@ -69,7 +68,7 @@ def run():
         # Import these here to avoid circular dependencies of the form:
         # edx-platform app --> DRF --> django translation --> edx-platform app
         from edx_proctoring.runtime import set_runtime_service
-        from instructor.services import InstructorService
+        from lms.djangoapps.instructor.services import InstructorService
         from openedx.core.djangoapps.credit.services import CreditService
         set_runtime_service('credit', CreditService())
 
@@ -83,8 +82,15 @@ def run():
     xmodule.x_module.descriptor_global_handler_url = lms_xblock.runtime.handler_url
     xmodule.x_module.descriptor_global_local_resource_url = lms_xblock.runtime.local_resource_url
 
+    # Set the version of docs that help-tokens will go to.
+    settings.HELP_TOKENS_LANGUAGE_CODE = settings.LANGUAGE_CODE
+    settings.HELP_TOKENS_VERSION = doc_version()
+
     # validate configurations on startup
     validate_lms_config(settings)
+
+    from branding_stanford.api import patch as patch_stanford_branding
+    patch_stanford_branding()
 
 
 def add_mimetypes():
@@ -99,6 +105,8 @@ def add_mimetypes():
     mimetypes.add_type('application/x-font-opentype', '.otf')
     mimetypes.add_type('application/x-font-ttf', '.ttf')
     mimetypes.add_type('application/font-woff', '.woff')
+    for extension, mimetype in settings.EXTRA_MIMETYPES.iteritems():
+        mimetypes.add_type(mimetype, extension)
 
 
 def enable_microsites():

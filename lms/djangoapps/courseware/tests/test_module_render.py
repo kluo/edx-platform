@@ -2,73 +2,67 @@
 """
 Test for lms courseware app, module render unit
 """
-import ddt
 import itertools
 import json
-from nose.plugins.attrib import attr
+from datetime import datetime
 from functools import partial
 
+import ddt
+import pytz
 from bson import ObjectId
-from django.http import Http404, HttpResponse
-from django.core.urlresolvers import reverse
 from django.conf import settings
+from django.contrib.auth.models import AnonymousUser
+from django.core.urlresolvers import reverse
+from django.http import Http404, HttpResponse
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
-from django.contrib.auth.models import AnonymousUser
-from mock import MagicMock, patch, Mock
-from opaque_keys.edx.keys import UsageKey, CourseKey
+from edx_proctoring.api import create_exam, create_exam_attempt, update_attempt_status
+from edx_proctoring.runtime import set_runtime_service
+from edx_proctoring.tests.test_services import MockCreditService
+from freezegun import freeze_time
+from milestones.tests.utils import MilestonesTestCaseMixin
+from mock import MagicMock, Mock, patch
+from nose.plugins.attrib import attr
+from opaque_keys.edx.keys import CourseKey, UsageKey
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from pyquery import PyQuery
-from xblock.field_data import FieldData
-from xblock.runtime import Runtime
-from xblock.fields import ScopeIds
 from xblock.core import XBlock, XBlockAside
+from xblock.field_data import FieldData
+from xblock.fields import ScopeIds
 from xblock.fragment import Fragment
+from xblock.runtime import Runtime
 
 from capa.tests.response_xml_factory import OptionResponseXMLFactory
 from course_modes.models import CourseMode
 from courseware import module_render as render
-from courseware.courses import get_course_with_access, get_course_info_section
+from courseware.courses import get_course_info_section, get_course_with_access
 from courseware.field_overrides import OverrideFieldData
 from courseware.model_data import FieldDataCache
-from courseware.module_render import hash_resource, get_module_for_descriptor
 from courseware.models import StudentModule
-from courseware.tests.factories import StudentModuleFactory, UserFactory, GlobalStaffFactory
-from courseware.tests.tests import LoginEnrollmentTestCase
+from courseware.module_render import get_module_for_descriptor, hash_resource
+from courseware.tests.factories import GlobalStaffFactory, StudentModuleFactory, UserFactory
 from courseware.tests.test_submitting_problems import TestSubmittingProblems
-from lms.djangoapps.lms_xblock.runtime import quote_slashes
+from courseware.tests.tests import LoginEnrollmentTestCase
 from lms.djangoapps.lms_xblock.field_data import LmsFieldData
+from openedx.core.djangoapps.credit.api import set_credit_requirement_status, set_credit_requirements
+from openedx.core.djangoapps.credit.models import CreditCourse
 from openedx.core.lib.courses import course_image_url
 from openedx.core.lib.gating import api as gating_api
+from openedx.core.lib.url_utils import quote_slashes
 from student.models import anonymous_id_for_user
-from xmodule.modulestore.tests.django_utils import (
-    ModuleStoreTestCase,
-    SharedModuleStoreTestCase,
-    TEST_DATA_MIXED_MODULESTORE
-)
+from verify_student.tests.factories import SoftwareSecurePhotoVerificationFactory
+from xblock_django.models import XBlockConfiguration
 from xmodule.lti_module import LTIDescriptor
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
-from xmodule.modulestore.tests.factories import ItemFactory, CourseFactory, ToyCourseFactory, check_mongo_calls
+from xmodule.modulestore.tests.django_utils import (
+    TEST_DATA_MIXED_MODULESTORE,
+    ModuleStoreTestCase,
+    SharedModuleStoreTestCase
+)
+from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory, ToyCourseFactory, check_mongo_calls
 from xmodule.modulestore.tests.test_asides import AsideTestType
-from xmodule.x_module import XModuleDescriptor, XModule, STUDENT_VIEW, CombinedSystem
-
-from openedx.core.djangoapps.credit.models import CreditCourse
-from openedx.core.djangoapps.credit.api import (
-    set_credit_requirements,
-    set_credit_requirement_status
-)
-from xblock_django.models import XBlockConfiguration
-
-from edx_proctoring.api import (
-    create_exam,
-    create_exam_attempt,
-    update_attempt_status
-)
-from edx_proctoring.runtime import set_runtime_service
-from edx_proctoring.tests.test_services import MockCreditService
-
-from milestones.tests.utils import MilestonesTestCaseMixin
+from xmodule.x_module import STUDENT_VIEW, CombinedSystem, XModule, XModuleDescriptor
 
 TEST_DATA_DIR = settings.COMMON_TEST_DATA_ROOT
 
@@ -142,7 +136,6 @@ class ModuleRenderTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
         super(ModuleRenderTestCase, self).setUp()
 
         self.mock_user = UserFactory()
-        self.mock_user.id = 1
         self.request_factory = RequestFactory()
 
         # Construct a mock module for the modulestore to return
@@ -194,6 +187,52 @@ class ModuleRenderTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
         # See if the url got rewritten to the target link
         # note if the URL mapping changes then this assertion will break
         self.assertIn('/courses/' + self.course_key.to_deprecated_string() + '/jump_to_id/vertical_test', html)
+
+    FEATURES_WITH_EMAIL = settings.FEATURES.copy()
+    FEATURES_WITH_EMAIL['SEND_USERS_EMAILADDR_WITH_CODERESPONSE'] = True
+
+    @override_settings(FEATURES=FEATURES_WITH_EMAIL)
+    def test_module_populated_with_user_email(self):
+        """
+        This tests that the module's system knows about the user's email when the appropriate flag is
+        set in LMS settings
+        """
+        mock_request = MagicMock()
+        mock_request.user = self.mock_user
+        course = get_course_with_access(self.mock_user, 'load', self.course_key)
+
+        field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
+            self.toy_course.id, self.mock_user, course, depth=2)
+
+        module = render.get_module(
+            self.mock_user,
+            mock_request,
+            self.course_key.make_usage_key('chapter', 'Overview'),
+            field_data_cache,
+        )
+        self.assertTrue(module.xmodule_runtime.send_users_emailaddr_with_coderesponse)
+        self.assertEqual(module.xmodule_runtime.deanonymized_user_email, self.mock_user.email)
+
+    def test_module_not_populated_with_user_email(self):
+        """
+        This tests that the module's system DOES NOT know about the user's email when the appropriate flag is NOT
+        set in LMS settings, which is the default
+        """
+        mock_request = MagicMock()
+        mock_request.user = self.mock_user
+        course = get_course_with_access(self.mock_user, 'load', self.course_key)
+
+        field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
+            self.toy_course.id, self.mock_user, course, depth=2)
+
+        module = render.get_module(
+            self.mock_user,
+            mock_request,
+            self.course_key.make_usage_key('chapter', 'Overview'),
+            field_data_cache,
+        )
+        self.assertFalse(hasattr(module.xmodule_runtime, 'send_users_emailaddr_with_coderesponse'))
+        self.assertFalse(hasattr(module.xmodule_runtime, 'deanonymized_user_email'))
 
     def test_xqueue_callback_success(self):
         """
@@ -250,14 +289,6 @@ class ModuleRenderTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
                     self.mock_module.id,
                     self.dispatch
                 )
-
-    def test_get_score_bucket(self):
-        self.assertEquals(render.get_score_bucket(0, 10), 'incorrect')
-        self.assertEquals(render.get_score_bucket(1, 10), 'partial')
-        self.assertEquals(render.get_score_bucket(10, 10), 'correct')
-        # get_score_bucket calls error cases 'incorrect'
-        self.assertEquals(render.get_score_bucket(11, 10), 'incorrect')
-        self.assertEquals(render.get_score_bucket(-1, 10), 'incorrect')
 
     def test_anonymous_handle_xblock_callback(self):
         dispatch_url = reverse(
@@ -740,6 +771,7 @@ class TestProctoringRendering(SharedModuleStoreTestCase):
         self.request = factory.get(chapter_url)
         self.request.user = UserFactory.create()
         self.user = UserFactory.create()
+        SoftwareSecurePhotoVerificationFactory.create(user=self.request.user)
         self.modulestore = self.store._get_modulestore_for_courselike(self.course_key)  # pylint: disable=protected-access
         with self.modulestore.bulk_operations(self.course_key):
             self.toy_course = self.store.get_course(self.course_key, depth=2)
@@ -1020,6 +1052,7 @@ class TestProctoringRendering(SharedModuleStoreTestCase):
         if attempt_status:
             create_exam_attempt(exam_id, self.request.user.id, taking_as_proctored=True)
             update_attempt_status(exam_id, self.request.user.id, attempt_status)
+
         return usage_key
 
     def _find_url_name(self, toc, url_name):
@@ -1138,6 +1171,7 @@ class TestHtmlModifiers(ModuleStoreTestCase):
     def setUp(self):
         super(TestHtmlModifiers, self).setUp()
         self.course = CourseFactory.create()
+        self.user = UserFactory.create()
         self.request = RequestFactory().get('/')
         self.request.user = self.user
         self.request.session = {}
@@ -1716,7 +1750,7 @@ class TestModuleTrackingContext(SharedModuleStoreTestCase):
 
         def get_event_context(self, event_type, event):  # pylint: disable=unused-argument
             """
-            This method return data that should be associated with the "check_problem" event
+            This method return data that should be associated with the "problem_check" event
             """
             return {'content': 'test1', 'data_field': 'test2'}
 
@@ -1835,19 +1869,24 @@ class TestXmoduleRuntimeEvent(TestSubmittingProblems):
         self.assertIsNone(student_module.grade)
         self.assertIsNone(student_module.max_grade)
 
-    @patch('courseware.module_render.SCORE_CHANGED.send')
+    @patch('lms.djangoapps.grades.signals.handlers.PROBLEM_RAW_SCORE_CHANGED.send')
     def test_score_change_signal(self, send_mock):
         """Test that a Django signal is generated when a score changes"""
-        self.set_module_grade_using_publish(self.grade_dict)
-        expected_signal_kwargs = {
-            'sender': None,
-            'points_possible': self.grade_dict['max_value'],
-            'points_earned': self.grade_dict['value'],
-            'user': self.student_user,
-            'course_id': unicode(self.course.id),
-            'usage_id': unicode(self.problem.location)
-        }
-        send_mock.assert_called_with(**expected_signal_kwargs)
+        with freeze_time(datetime.now().replace(tzinfo=pytz.UTC)):
+            self.set_module_grade_using_publish(self.grade_dict)
+            expected_signal_kwargs = {
+                'sender': None,
+                'raw_possible': self.grade_dict['max_value'],
+                'raw_earned': self.grade_dict['value'],
+                'weight': None,
+                'user_id': self.student_user.id,
+                'course_id': unicode(self.course.id),
+                'usage_id': unicode(self.problem.location),
+                'only_if_higher': None,
+                'modified': datetime.now().replace(tzinfo=pytz.UTC),
+                'score_db_table': 'csm',
+            }
+            send_mock.assert_called_with(**expected_signal_kwargs)
 
 
 @attr(shard=1)
@@ -1948,6 +1987,7 @@ class TestEventPublishing(ModuleStoreTestCase, LoginEnrollmentTestCase):
     @XBlock.register_temp_plugin(PureXBlock, identifier='xblock')
     @XBlock.register_temp_plugin(EmptyXModuleDescriptor, identifier='xmodule')
     @patch.object(render, 'make_track_function')
+    @patch('student.models.UserProfile.has_registered', Mock(return_value=True))
     def test_event_publishing(self, block_type, mock_track_function):
         request = self.request_factory.get('')
         request.user = self.mock_user

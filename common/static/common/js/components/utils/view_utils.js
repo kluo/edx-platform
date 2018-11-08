@@ -201,6 +201,39 @@
                 return false;
             };
 
+            var keywordValidator = (function () {
+                var regexp = /%%[^%\s]+%%/g;
+                var keywordsSupported = [
+                    '%%USERNAME%%',
+                    '%%USER_ID%%',
+                    '%%USER_FULLNAME%%',
+                    '%%COURSE_DISPLAY_NAME%%',
+                    '%%COURSE_ID%%',
+                    '%%COURSE_START_DATE%%',
+                    '%%COURSE_END_DATE%%'
+                ];
+                function validate(string) {
+                    var keywordsFound = string.match(regexp) || [];
+                    var keywordsInvalid = $.map(keywordsFound, function (keyword) {
+                        if ($.inArray(keyword, keywordsSupported) === -1) {
+                            return keyword;
+                        } else {
+                            // return `null` or `undefined` to remove an element
+                            return undefined;
+                        }
+                    });
+
+                    return {
+                        'isValid': keywordsInvalid.length === 0,
+                        'keywordsInvalid': keywordsInvalid
+                    }
+
+                }
+                return {
+                    'validateString': validate
+                };
+            }());
+
             /**
              * Helper method for course/library creation - verifies a required field is not blank.
              */
@@ -270,6 +303,7 @@
             };
 
             return {
+                'keywordValidator': keywordValidator,
                 'toggleExpandCollapse': toggleExpandCollapse,
                 'showLoadingIndicator': showLoadingIndicator,
                 'hideLoadingIndicator': hideLoadingIndicator,

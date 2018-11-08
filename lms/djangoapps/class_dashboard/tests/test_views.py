@@ -6,11 +6,11 @@ import json
 from django.test.client import RequestFactory
 from mock import patch
 from nose.plugins.attrib import attr
-from xmodule.modulestore.tests.factories import CourseFactory
-from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 
 from class_dashboard import views
 from student.tests.factories import AdminFactory
+from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
+from xmodule.modulestore.tests.factories import CourseFactory
 
 
 @attr(shard=1)
@@ -26,6 +26,7 @@ class TestViews(ModuleStoreTestCase):
         self.request = self.request_factory.get('')
         self.request.user = None
         self.simple_data = {'error': 'error'}
+        self.enrollment = 100
 
     @patch('class_dashboard.views.has_instructor_access_for_class')
     def test_all_problem_grade_distribution_has_access(self, has_access):
@@ -33,7 +34,7 @@ class TestViews(ModuleStoreTestCase):
         Test returns proper value when have proper access
         """
         has_access.return_value = True
-        response = views.all_problem_grade_distribution(self.request, 'test/test/test')
+        response = views.all_problem_grade_distribution(self.request, 'test/test/test', self.enrollment)
 
         self.assertEqual(json.dumps(self.simple_data), response.content)
 
@@ -43,7 +44,7 @@ class TestViews(ModuleStoreTestCase):
         Test for no access
         """
         has_access.return_value = False
-        response = views.all_problem_grade_distribution(self.request, 'test/test/test')
+        response = views.all_problem_grade_distribution(self.request, 'test/test/test', self.enrollment)
 
         self.assertEqual("{\"error\": \"Access Denied: User does not have access to this course\'s data\"}", response.content)
 
@@ -53,7 +54,7 @@ class TestViews(ModuleStoreTestCase):
         Test returns proper value when have proper access
         """
         has_access.return_value = True
-        response = views.all_sequential_open_distrib(self.request, 'test/test/test')
+        response = views.all_sequential_open_distrib(self.request, 'test/test/test', self.enrollment)
 
         self.assertEqual(json.dumps(self.simple_data), response.content)
 
@@ -63,7 +64,7 @@ class TestViews(ModuleStoreTestCase):
         Test for no access
         """
         has_access.return_value = False
-        response = views.all_sequential_open_distrib(self.request, 'test/test/test')
+        response = views.all_sequential_open_distrib(self.request, 'test/test/test', self.enrollment)
 
         self.assertEqual("{\"error\": \"Access Denied: User does not have access to this course\'s data\"}", response.content)
 
@@ -73,7 +74,7 @@ class TestViews(ModuleStoreTestCase):
         Test returns proper value when have proper access
         """
         has_access.return_value = True
-        response = views.section_problem_grade_distrib(self.request, 'test/test/test', '1')
+        response = views.section_problem_grade_distrib(self.request, 'test/test/test', '1', self.enrollment)
 
         self.assertEqual(json.dumps(self.simple_data), response.content)
 
@@ -83,7 +84,7 @@ class TestViews(ModuleStoreTestCase):
         Test for no access
         """
         has_access.return_value = False
-        response = views.section_problem_grade_distrib(self.request, 'test/test/test', '1')
+        response = views.section_problem_grade_distrib(self.request, 'test/test/test', '1', self.enrollment)
 
         self.assertEqual("{\"error\": \"Access Denied: User does not have access to this course\'s data\"}", response.content)
 
@@ -93,11 +94,11 @@ class TestViews(ModuleStoreTestCase):
         instructor = AdminFactory.create()
         self.request.user = instructor
 
-        response = views.all_sequential_open_distrib(self.request, course.id.to_deprecated_string())
+        response = views.all_sequential_open_distrib(self.request, course.id.to_deprecated_string(), self.enrollment)
         self.assertEqual('[]', response.content)
 
-        response = views.all_problem_grade_distribution(self.request, course.id.to_deprecated_string())
+        response = views.all_problem_grade_distribution(self.request, course.id.to_deprecated_string(), self.enrollment)
         self.assertEqual('[]', response.content)
 
-        response = views.section_problem_grade_distrib(self.request, course.id.to_deprecated_string(), 'no section')
+        response = views.section_problem_grade_distrib(self.request, course.id.to_deprecated_string(), 'no section', self.enrollment)
         self.assertEqual('{"error": "error"}', response.content)

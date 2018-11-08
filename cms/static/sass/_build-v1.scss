@@ -63,6 +63,9 @@
 @import 'views/unit';
 @import 'views/container';
 @import 'views/users';
+@import 'views/utilities';
+@import 'views/bulksettings';
+@import 'views/captions';
 @import 'views/textbooks';
 @import 'views/export-git';
 @import 'views/group-configuration';
@@ -87,3 +90,9 @@
 // +CodeMirror Overrides
 // ====================
 @import 'elements/codemirror-overrides';
+
+// CAPA Problem Feedback
+@import 'edx-pattern-library-shims/buttons';
+
+@import 'edx-pattern-library-shims/base/variables';
+

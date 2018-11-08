@@ -106,6 +106,8 @@
             @include box-sizing(border-box);
             border-radius: 3px;
             display: block;
+            float: left;
+            margin-right: flex-gutter(12);
             font: normal 1.2rem/1.6rem $sans-serif;
             letter-spacing: 1px;
             padding: ($baseline/2) 0;
@@ -145,7 +147,7 @@
             }
           }
 
-          span.register, span.add-to-cart {
+          span.register, span.add-to-cart, span.sneakpeek {
             background: $button-archive-color;
             border: 1px solid darken($button-archive-color, 50%);
             @include box-sizing(border-box);
@@ -158,7 +160,11 @@
             @include float(left);
             @include margin(1px, flex-gutter(8), 0, 0);
             @include transition(none);
-            width: flex-grid(5, 8);
+            width: flex-grid(4, 8);
+          }
+          
+          span.sneakpeek {
+            margin-right: 0;
           }
 
           #register_error {
@@ -364,7 +370,7 @@
 
       &.course-summary {
         padding: 16px 20px 30px;
-        margin-bottom: 220px;
+        margin-bottom: 50px;
         border-top: none;
       }
 
@@ -390,11 +396,19 @@
           background: url('#{$static-path}/images/link-icon.png') left center no-repeat;
         }
       }
+      
+      &.about-sidebar-html {
+        position: relative;
+        clear: both;
+        margin-top: 50px;
+        box-shadow: none;
+        border: none;
+      }
     }
 
     >.coursetalk-read-reviews {
-      margin-top: -200px;
-      margin-bottom: 220px;
+      margin-top: 50px;
+      margin-bottom: 0;
     }
 
     header {
@@ -557,3 +571,5 @@
     }
   }
 }
+
+@import '../stanford/course/_sneakpeek_course_about.scss';

@@ -155,6 +155,17 @@
       @extend %t-strong;
     }
 
+    .send-test-email {
+      @extend %ui-btn-flat-outline;
+      float: right;
+    }
+
+    .fill-default-email {
+      @extend %ui-btn-flat-outline;
+      float: right;
+      margin-right: 10px;
+    }
+
     .new-button {
       @extend %t-action3;
     }
@@ -191,6 +202,11 @@
 
       .field {
         margin: 0 0 ($baseline*2) 0;
+
+        &.text .subject {
+          height: 40px;
+          resize: none;
+        }
 
         &:last-child {
           margin-bottom: 0;
@@ -269,6 +285,23 @@
 
           & + label {
             display: inline-block;
+          }
+        }
+
+        .list-actions {
+          padding-top:  ($baseline/2);
+  
+          .action-primary {
+            @extend %btn-primary-blue;
+            @extend %t-action3;
+            font-weight: 600;
+
+            .icon {
+              @extend %t-icon5;
+              display: inline-block;
+              vertical-align: middle;
+              margin-top: -3px;
+            }
           }
         }
       }
@@ -479,6 +512,32 @@
     #field-course-overview {
 
       #course-overview {
+        height: ($baseline*20);
+      }
+
+      //adds back in CodeMirror border removed due to Unit page styling of component editors
+      .CodeMirror {
+        border: 1px solid $gray-l2;
+      }
+    }
+
+    // specific fields - pre-enrollment email
+    #field-pre-enrollment-email {
+
+      #pre-enrollment-email {
+        height: ($baseline*20);
+      }
+
+      //adds back in CodeMirror border removed due to Unit page styling of component editors
+      .CodeMirror {
+        border: 1px solid $gray-l2;
+      }
+    }
+
+    // specific fields - post-enrollment email
+    #field-post-enrollment-email {
+
+      #post-enrollment-email {
         height: ($baseline*20);
       }
 
@@ -1078,7 +1137,7 @@
           background-color: $pink-l5;
 
           .status {
-            color: $pink-l2;
+            color: $pink;
           }
         }
       }

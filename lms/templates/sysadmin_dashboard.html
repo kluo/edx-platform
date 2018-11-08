@@ -9,6 +9,9 @@ from django.utils.translation import ugettext as _
   <%static:css group='style-course'/>
   <script type="text/javascript" src="${static.url('js/vendor/flot/jquery.flot.js')}"></script>
   <script type="text/javascript" src="${static.url('js/vendor/flot/jquery.flot.axislabels.js')}"></script>
+  %if modeflag.get('mgmt_commands'):
+      <script type='text/javascript' src="${static.url('js/sysadmin/mgmt_commands.js')}"></script>
+  %endif
 </%block>
 
 <style type="text/css">
@@ -60,6 +63,8 @@ textarea {
       <a href="${reverse('sysadmin_staffing')}" class="${modeflag.get('staffing')}">${_('Staffing and Enrollment')}</a>
       ## Translators: refers to http://git-scm.com/docs/git-log
       <a href="${reverse('gitlogs')}">${_('Git Logs')}</a>
+      <a href="${reverse('sysadmin_task_queue')}" class="${modeflag.get('task_queue')}">${_('Tasks')}</a>
+      <a href="${reverse('sysadmin_mgmt_commands')}" class="${modeflag.get('mgmt_commands')}">${_('MGMT Commands')}</a>
     </h2>
 	<hr />
 %if modeflag.get('users'):
@@ -90,6 +95,24 @@ textarea {
 		<button type="submit" name="action" value="create_user">${_('Create user')}</button>
 	  </p>
     </div>
+
+	<hr />
+	<ul class="list-input">
+	  <li class="field text">
+	    <label for="username_old">${_('Old Username')}</label>
+	    <input type="text" name="username_old" size=40 />
+	  </li>
+	  <li class="field text">
+	    <label for="username_new">${_('New Username')}</label>
+	    <input type="text" name="username_new" size=40 />
+	  </li>
+	</ul>
+
+	<div class="form-actions">
+	  <p>
+	    <button type="submit" name="action" value="rename_user">${_('Rename user')}</button>
+	  </p>
+	</div>
 
 	<hr />
     <p>
@@ -165,8 +188,37 @@ textarea {
 <hr style="width:40%" />
 %endif
 
+%if modeflag.get('task_queue'):
+  <h3>${_('Kill Task')}</h3><br/>
+
+  <form name="action" method="POST">
+    <input type="hidden" name="csrfmiddlewaretoken" value="${ csrf_token }" />
+
+    <ul class="list-input">
+      <li class="field text" style="padding-bottom: 1.2em">
+        <label for="row_id">${_('ID of row in instructor_task_instructortask')}</label>
+        <input type="text" name="row_id" size=40 />
+      </li>
+    </ul>
+
+    <div class="form-actions">
+      <p>
+        <button type="submit" name="action" value="kill_task">${_('Kill task')}</button>
+      </p>
+    </div>
+
+    <hr />
+  </form>
+%endif
+
 %if msg:
     <p>${msg}</p>
+%endif
+
+%if modeflag.get('mgmt_commands'):
+    <div class="mgmt-commands-body">
+        <h2>Execute Management Command</h2>
+    </div>
 %endif
 
 %if datatable:

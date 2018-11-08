@@ -37,7 +37,7 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     var fieldData = FieldViewsSpecHelpers.createFieldData(fieldViewClass, {
                         title: 'Username',
                         valueAttribute: 'username',
-                        helpMessage: 'The username that you use to sign in to edX.'
+                        helpMessage: 'The username that you use to sign in to this site.'
                     });
 
                     var view = new fieldViewClass(fieldData).render();
@@ -51,7 +51,7 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     var fieldData = FieldViewsSpecHelpers.createFieldData(fieldViewClass, {
                         title: 'Username',
                         valueAttribute: 'username',
-                        helpMessage: 'The username that you use to sign in to edX.'
+                        helpMessage: 'The username that you use to sign in to this site.'
                     });
 
                     var view = new fieldViewClass(fieldData).render();
@@ -87,7 +87,7 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                 var fieldData = FieldViewsSpecHelpers.createFieldData(FieldViews.ReadonlyFieldView, {
                     title: 'Username',
                     valueAttribute: 'username',
-                    helpMessage: 'The username that you use to sign in to edX.'
+                    helpMessage: 'The username that you use to sign in to this site.'
                 });
                 var view = new FieldViews.ReadonlyFieldView(fieldData).render();
 
@@ -231,6 +231,7 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     }
                     expect(view.$(dropdownSelectClass).length).toBe(1);
                     view.$(dropdownSelectClass).val(FieldViewsSpecHelpers.SELECT_OPTIONS[0]).change();
+                    view.$(dropdownSelectClass).focusout();
                     expect(view.fieldValue()).toBe(FieldViewsSpecHelpers.SELECT_OPTIONS[0][0]);
 
                     AjaxHelpers.respondWithNoContent(requests);
@@ -245,8 +246,8 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     title: 'About me',
                     valueAttribute: 'bio',
                     helpMessage: 'Wicked is good',
-                    placeholderValue: 'Tell other edX learners a little about yourself: where you live, ' +
-                        'what your interests are, why you’re taking courses on edX, or what you hope to learn.',
+                    placeholderValue: "Tell other learners a little about yourself: where you live, " +
+                        "what your interests are, why you’re taking courses, or what you hope to learn.",
                     editable: 'never',
                     persistChanges: true,
                     messagePosition: 'header'
@@ -277,6 +278,8 @@ define(['backbone', 'jquery', 'underscore', 'edx-ui-toolkit/js/utils/spec-helper
                     title: 'About me',
                     valueAttribute: 'bio',
                     helpMessage: 'Wicked is good',
+                    placeholderValue: "Tell other learners a little about yourself: where you live, " +
+                        "what your interests are, why you’re taking courses, or what you hope to learn.",
                     placeholderValue: 'Tell other edX learners a little about yourself: where you live, ' +
                         'what your interests are, why you’re taking courses on edX, or what you hope to learn.',
                     editable: 'toggle',

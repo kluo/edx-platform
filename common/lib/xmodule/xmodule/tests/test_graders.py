@@ -1,8 +1,16 @@
-"""Grading tests"""
-import unittest
+"""
+Grading tests
+"""
 
+import unittest
+from datetime import datetime, timedelta
+
+import ddt
+from pytz import UTC
 from xmodule import graders
-from xmodule.graders import ProblemScore, AggregatedScore, aggregate_scores
+from xmodule.graders import (
+    AggregatedScore, ProblemScore, ShowCorrectness, aggregate_scores
+)
 
 
 class GradesheetTest(unittest.TestCase):
@@ -12,10 +20,11 @@ class GradesheetTest(unittest.TestCase):
 
     def test_weighted_grading(self):
         scores = []
-        agg_fields = dict(display_name="aggregated_score", module_id=None)
-        prob_fields = dict(display_name="problem_score", module_id=None, raw_earned=0, raw_possible=0, weight=0)
+        agg_fields = dict(first_attempted=None)
+        prob_fields = dict(raw_earned=0, raw_possible=0, weight=0, first_attempted=None)
 
-        all_total, graded_total = aggregate_scores(scores, display_name=agg_fields['display_name'])
+        # No scores
+        all_total, graded_total = aggregate_scores(scores)
         self.assertEqual(
             all_total,
             AggregatedScore(tw_earned=0, tw_possible=0, graded=False, **agg_fields),
@@ -25,8 +34,9 @@ class GradesheetTest(unittest.TestCase):
             AggregatedScore(tw_earned=0, tw_possible=0, graded=True, **agg_fields),
         )
 
+        # (0/5 non-graded)
         scores.append(ProblemScore(weighted_earned=0, weighted_possible=5, graded=False, **prob_fields))
-        all_total, graded_total = aggregate_scores(scores, display_name=agg_fields['display_name'])
+        all_total, graded_total = aggregate_scores(scores)
         self.assertEqual(
             all_total,
             AggregatedScore(tw_earned=0, tw_possible=5, graded=False, **agg_fields),
@@ -36,8 +46,12 @@ class GradesheetTest(unittest.TestCase):
             AggregatedScore(tw_earned=0, tw_possible=0, graded=True, **agg_fields),
         )
 
+        # (0/5 non-graded) + (3/5 graded) = 3/10 total, 3/5 graded
+        now = datetime.now()
+        prob_fields['first_attempted'] = now
+        agg_fields['first_attempted'] = now
         scores.append(ProblemScore(weighted_earned=3, weighted_possible=5, graded=True, **prob_fields))
-        all_total, graded_total = aggregate_scores(scores, display_name=agg_fields['display_name'])
+        all_total, graded_total = aggregate_scores(scores)
         self.assertAlmostEqual(
             all_total,
             AggregatedScore(tw_earned=3, tw_possible=10, graded=False, **agg_fields),
@@ -47,8 +61,9 @@ class GradesheetTest(unittest.TestCase):
             AggregatedScore(tw_earned=3, tw_possible=5, graded=True, **agg_fields),
         )
 
+        # (0/5 non-graded) + (3/5 graded) + (2/5 graded) = 5/15 total, 5/10 graded
         scores.append(ProblemScore(weighted_earned=2, weighted_possible=5, graded=True, **prob_fields))
-        all_total, graded_total = aggregate_scores(scores, display_name=agg_fields['display_name'])
+        all_total, graded_total = aggregate_scores(scores)
         self.assertAlmostEqual(
             all_total,
             AggregatedScore(tw_earned=5, tw_possible=15, graded=False, **agg_fields),
@@ -59,6 +74,7 @@ class GradesheetTest(unittest.TestCase):
         )
 
 
+@ddt.ddt
 class GraderTest(unittest.TestCase):
     """
     Tests grader implementations
@@ -68,53 +84,47 @@ class GraderTest(unittest.TestCase):
     }
 
     incomplete_gradesheet = {
-        'Homework': [],
-        'Lab': [],
-        'Midterm': [],
+        'Homework': {},
+        'Lab': {},
+        'Midterm': {},
     }
 
+    class MockGrade(object):
+        """
+        Mock class for SubsectionGrade object.
+        """
+        def __init__(self, graded_total, display_name):
+            self.graded_total = graded_total
+            self.display_name = display_name
+
+    common_fields = dict(graded=True, first_attempted=datetime.now())
     test_gradesheet = {
-        'Homework': [
-            AggregatedScore(tw_earned=2, tw_possible=20.0, graded=True, display_name='hw1', module_id=None),
-            AggregatedScore(tw_earned=16, tw_possible=16.0, graded=True, display_name='hw2', module_id=None)
-        ],
+        'Homework': {
+            'hw1': MockGrade(AggregatedScore(tw_earned=2, tw_possible=20.0, **common_fields), display_name='hw1'),
+            'hw2': MockGrade(AggregatedScore(tw_earned=16, tw_possible=16.0, **common_fields), display_name='hw2'),
+        },
 
         # The dropped scores should be from the assignments that don't exist yet
-        'Lab': [
-            AggregatedScore(tw_earned=1, tw_possible=2.0, graded=True, display_name='lab1', module_id=None),  # Dropped
-            AggregatedScore(tw_earned=1, tw_possible=1.0, graded=True, display_name='lab2', module_id=None),
-            AggregatedScore(tw_earned=1, tw_possible=1.0, graded=True, display_name='lab3', module_id=None),
-            AggregatedScore(tw_earned=5, tw_possible=25.0, graded=True, display_name='lab4', module_id=None),  # Dropped
-            AggregatedScore(tw_earned=3, tw_possible=4.0, graded=True, display_name='lab5', module_id=None),  # Dropped
-            AggregatedScore(tw_earned=6, tw_possible=7.0, graded=True, display_name='lab6', module_id=None),
-            AggregatedScore(tw_earned=5, tw_possible=6.0, graded=True, display_name='lab7', module_id=None),
-        ],
+        'Lab': {
+            # Dropped
+            'lab1': MockGrade(AggregatedScore(tw_earned=1, tw_possible=2.0, **common_fields), display_name='lab1'),
+            'lab2': MockGrade(AggregatedScore(tw_earned=1, tw_possible=1.0, **common_fields), display_name='lab2'),
+            'lab3': MockGrade(AggregatedScore(tw_earned=1, tw_possible=1.0, **common_fields), display_name='lab3'),
+            # Dropped
+            'lab4': MockGrade(AggregatedScore(tw_earned=5, tw_possible=25.0, **common_fields), display_name='lab4'),
+            # Dropped
+            'lab5': MockGrade(AggregatedScore(tw_earned=3, tw_possible=4.0, **common_fields), display_name='lab5'),
+            'lab6': MockGrade(AggregatedScore(tw_earned=6, tw_possible=7.0, **common_fields), display_name='lab6'),
+            'lab7': MockGrade(AggregatedScore(tw_earned=5, tw_possible=6.0, **common_fields), display_name='lab7'),
+        },
 
-        'Midterm': [
-            AggregatedScore(tw_earned=50.5, tw_possible=100, graded=True, display_name="Midterm Exam", module_id=None),
-        ],
+        'Midterm': {
+            'midterm': MockGrade(
+                AggregatedScore(tw_earned=50.5, tw_possible=100, **common_fields),
+                display_name="Midterm Exam",
+            ),
+        },
     }
-
-    def test_single_section_grader(self):
-        midterm_grader = graders.SingleSectionGrader("Midterm", "Midterm Exam")
-        lab4_grader = graders.SingleSectionGrader("Lab", "lab4")
-        bad_lab_grader = graders.SingleSectionGrader("Lab", "lab42")
-
-        for graded in [
-                midterm_grader.grade(self.empty_gradesheet),
-                midterm_grader.grade(self.incomplete_gradesheet),
-                bad_lab_grader.grade(self.test_gradesheet),
-        ]:
-            self.assertEqual(len(graded['section_breakdown']), 1)
-            self.assertEqual(graded['percent'], 0.0)
-
-        graded = midterm_grader.grade(self.test_gradesheet)
-        self.assertAlmostEqual(graded['percent'], 0.505)
-        self.assertEqual(len(graded['section_breakdown']), 1)
-
-        graded = lab4_grader.grade(self.test_gradesheet)
-        self.assertAlmostEqual(graded['percent'], 0.2)
-        self.assertEqual(len(graded['section_breakdown']), 1)
 
     def test_assignment_format_grader(self):
         homework_grader = graders.AssignmentFormatGrader("Homework", 12, 2)
@@ -170,8 +180,6 @@ class GraderTest(unittest.TestCase):
         # First, a few sub graders
         homework_grader = graders.AssignmentFormatGrader("Homework", 12, 2)
         lab_grader = graders.AssignmentFormatGrader("Lab", 7, 3)
-        # phasing out the use of SingleSectionGraders, and instead using AssignmentFormatGraders that
-        # will act like SingleSectionGraders on single sections.
         midterm_grader = graders.AssignmentFormatGrader("Midterm", 1, 0)
 
         weighted_grader = graders.WeightedSubsectionsGrader([
@@ -259,6 +267,8 @@ class GraderTest(unittest.TestCase):
             },
             {
                 'type': "Midterm",
+                'min_count': 0,
+                'drop_count': 0,
                 'name': "Midterm Exam",
                 'short_label': "Midterm",
                 'weight': 0.5,
@@ -285,5 +295,108 @@ class GraderTest(unittest.TestCase):
         self.assertAlmostEqual(graded['percent'], 0.11)
         self.assertEqual(len(graded['section_breakdown']), 12 + 1)
 
-        # TODO: How do we test failure cases? The parser only logs an error when
-        # it can't parse something. Maybe it should throw exceptions?
+    @ddt.data(
+        (
+            # empty
+            {},
+            u"Configuration has no appropriate grader class."
+        ),
+        (
+            # no min_count
+            {'type': "Homework", 'drop_count': 0},
+            u"Configuration has no appropriate grader class."
+        ),
+        (
+            # no drop_count
+            {'type': "Homework", 'min_count': 0},
+            u"__init__() takes at least 4 arguments (3 given)"
+        ),
+    )
+    @ddt.unpack
+    def test_grader_with_invalid_conf(self, invalid_conf, expected_error_message):
+        with self.assertRaises(ValueError) as error:
+            graders.grader_from_conf([invalid_conf])
+        self.assertIn(expected_error_message, error.exception.message)
+
+
+@ddt.ddt
+class ShowCorrectnessTest(unittest.TestCase):
+    """
+    Tests the correctness_available method
+    """
+    def setUp(self):
+        super(ShowCorrectnessTest, self).setUp()
+
+        now = datetime.now(UTC)
+        day_delta = timedelta(days=1)
+        self.yesterday = now - day_delta
+        self.today = now
+        self.tomorrow = now + day_delta
+
+    def test_show_correctness_default(self):
+        """
+        Test that correctness is visible by default.
+        """
+        self.assertTrue(ShowCorrectness.correctness_available())
+
+    @ddt.data(
+        (ShowCorrectness.ALWAYS, True),
+        (ShowCorrectness.ALWAYS, False),
+        # Any non-constant values behave like "always"
+        ('', True),
+        ('', False),
+        ('other-value', True),
+        ('other-value', False),
+    )
+    @ddt.unpack
+    def test_show_correctness_always(self, show_correctness, has_staff_access):
+        """
+        Test that correctness is visible when show_correctness is turned on.
+        """
+        self.assertTrue(ShowCorrectness.correctness_available(
+            show_correctness=show_correctness,
+            has_staff_access=has_staff_access
+        ))
+
+    @ddt.data(True, False)
+    def test_show_correctness_never(self, has_staff_access):
+        """
+        Test that show_correctness="never" hides correctness from learners and course staff.
+        """
+        self.assertFalse(ShowCorrectness.correctness_available(
+            show_correctness=ShowCorrectness.NEVER,
+            has_staff_access=has_staff_access
+        ))
+
+    @ddt.data(
+        # Correctness not visible to learners if due date in the future
+        ('tomorrow', False, False),
+        # Correctness is visible to learners if due date in the past
+        ('yesterday', False, True),
+        # Correctness is visible to learners if due date in the past (just)
+        ('today', False, True),
+        # Correctness is visible to learners if there is no due date
+        (None, False, True),
+        # Correctness is visible to staff if due date in the future
+        ('tomorrow', True, True),
+        # Correctness is visible to staff if due date in the past
+        ('yesterday', True, True),
+        # Correctness is visible to staff if there is no due date
+        (None, True, True),
+    )
+    @ddt.unpack
+    def test_show_correctness_past_due(self, due_date_str, has_staff_access, expected_result):
+        """
+        Test show_correctness="past_due" to ensure:
+        * correctness is always visible to course staff
+        * correctness is always visible to everyone if there is no due date
+        * correctness is visible to learners after the due date, when there is a due date.
+        """
+        if due_date_str is None:
+            due_date = None
+        else:
+            due_date = getattr(self, due_date_str)
+        self.assertEquals(
+            ShowCorrectness.correctness_available(ShowCorrectness.PAST_DUE, due_date, has_staff_access),
+            expected_result
+        )

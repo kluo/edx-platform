@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 """Tests for tracking middleware."""
 import ddt
-from mock import patch
-from mock import sentinel
-
 from django.contrib.auth.models import User
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.test import TestCase
 from django.test.client import RequestFactory
 from django.test.utils import override_settings
+from mock import patch, sentinel
 
 from eventtracking import tracker
 from track.middleware import TrackMiddleware
@@ -205,3 +203,19 @@ class TrackMiddlewareTestCase(TestCase):
             'agent': user_agent,
             'client_id': client_id_header
         })
+
+    @patch('track.middleware.TRUNCATION_LENGTH', 6)
+    def test_student_answer_request(self):
+        request = self.request_factory.post('/dummy')
+        request.POST = {'student_answer': ['firstanswer', 'secondanswer']}
+        self.track_middleware.process_request(request)
+        event = '{"POST": {"student_answer": ["fir", "sec"]}, "GET": {}}'
+        self.mock_server_track.assert_called_with(request, request.META['PATH_INFO'], event)
+
+    @patch('track.middleware.TRUNCATION_LENGTH', 20)
+    def test_submission_request(self):
+        request = self.request_factory.post('/dummy')
+        request.POST = {'{"submission":["first open response", "second open response"]}': []}
+        self.track_middleware.process_request(request)
+        event = '{"POST": {"submission": ["first open", "second ope"]}, "GET": {}}'
+        self.mock_server_track.assert_called_with(request, request.META['PATH_INFO'], event)

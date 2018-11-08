@@ -10,6 +10,7 @@ define(['backbone', 'underscore', 'gettext', 'js/models/validation_helpers', 'js
                 end_date: null,		// maps to 'end'
                 enrollment_start: null,
                 enrollment_end: null,
+                enable_enrollment_email: false,
                 syllabus: null,
                 title: '',
                 subtitle: '',

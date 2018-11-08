@@ -3,7 +3,7 @@ import json
 from django.utils.translation import ugettext as _
 %>
 
-<h3 class="hd hd-2 problem-header">
+<h3 class="hd hd-3 problem-header">
     ## Translators:  "External resource" means that this learning module is hosted on a platform external to the edX LMS
     ${display_name} (${_('External resource')})
 </h3>
@@ -12,10 +12,10 @@ from django.utils.translation import ugettext as _
     <div class="problem-progress">
         % if module_score is not None:
             ## Translators: "points" is the student's achieved score on this LTI unit, and "total_points" is the maximum number of points achievable.
-            (${_("{points} / {total_points} points").format(points=module_score, total_points=weight)})
+            (${_("{points} / {total_points} points").format(points="{:0.2f}".format(module_score), total_points="{:0.2f}".format(weight))})
         % else:
             ## Translators: "total_points" is the maximum number of points achievable on this LTI unit
-            (${_("{total_points} points possible").format(total_points=weight)})
+            (${_("{total_points} points possible").format(total_points="{:0.2f}".format(weight))})
         % endif
     </div>
 % endif
@@ -26,7 +26,10 @@ from django.utils.translation import ugettext as _
     data-ask-to-send-username="${ask_to_send_username}"
     data-ask-to-send-email="${ask_to_send_email}"
 >
-
+  <div class="problem-instruction">
+      ${instruction_text}
+  </div>
+  </div>
 % if launch_url and launch_url !=  'http://www.example.com' and not hide_launch:
     % if open_in_a_new_page:
         <div class="wrapper-lti-link">
@@ -57,7 +60,9 @@ from django.utils.translation import ugettext as _
 % endif
 
 % if has_score and comment:
-    <h4 class="hd hd-4 problem-feedback-label">${_("Feedback on your work from the grader:")}</h4>
+    % if grader_feedback_label:
+        <h4 class="hd hd-4 problem-feedback-label">${grader_feedback_label}</h4>
+    % endif
     <div class="problem-feedback">
         ## sanitized with bleach in view
         ${comment}

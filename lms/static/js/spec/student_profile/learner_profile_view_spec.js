@@ -39,7 +39,7 @@ define(['backbone',
                     required: true,
                     editable: 'always',
                     showMessages: false,
-                    title: 'edX learners can see my:',
+                    title: 'learners can see my:',
                     valueAttribute: 'account_privacy',
                     options: [
                         ['all_users', 'Full Profile'],
@@ -102,8 +102,8 @@ define(['backbone',
                         editable: editable,
                         showMessages: false,
                         title: 'About me',
-                        placeholderValue: 'Tell other edX learners a little about yourself: where you live, ' +
-                            "what your interests are, why you're taking courses on edX, or what you hope to learn.",
+                        placeholderValue: "Tell other learners a little about yourself: where you live, " +
+                            "what your interests are, why you're taking courses, or what you hope to learn.",
                         valueAttribute: 'bio',
                         helpMessage: '',
                         messagePosition: 'header'
